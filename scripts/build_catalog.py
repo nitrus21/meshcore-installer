@@ -86,6 +86,42 @@ def extract_dfu(zip_bytes):
         return z.read(app["bin_file"]), z.read(app["dat_file"])
 
 
+FLASHER = "https://flasher.meshcore.io"
+
+
+def erasers(out_dir):
+    """Firmwares « effaceurs » du flasher officiel MeshCore : formatent le stockage (LittleFS
+    interne ou flash QSPI) puis rendent la main au bootloader. Retourne {carte: chemin}."""
+    config = json.loads(http_get(f"{FLASHER}/config.json", "application/json"))
+    by_board, done = {}, {}
+    for device in config["device"]:
+        zip_name = device.get("erase")
+        if not zip_name:
+            continue
+        # Les cartes d'un appareil se lisent dans les motifs de ses firmwares, ex. "(?:ProMicro|Faketec)_repeater.*"
+        prefixes = set()
+        for fw in device.get("firmware", []):
+            for key, src in fw.items():
+                if key.startswith("github"):
+                    for pat in src.get("files", {}).values():
+                        m = re.match(r"^(?:\(\?:([^)]+)\)|([A-Za-z0-9_\-]+?))_(?:\[[rR]{2}\]epeater|[rR]epeater|companion|room)", pat)
+                        if m:
+                            prefixes.update((m[1] or m[2]).split("|"))
+        if zip_name not in done:
+            dfu = extract_dfu(http_get(f"{FLASHER}/firmware/{zip_name}"))
+            name = zip_name[:-4]
+            rel_dir = f"firmware/erase/{name}"
+            os.makedirs(os.path.join(out_dir, rel_dir), exist_ok=True)
+            for fname, data in zip(("firmware.bin", "firmware.dat"), dfu):
+                with open(os.path.join(out_dir, rel_dir, fname), "wb") as f:
+                    f.write(data)
+            done[zip_name] = {"bin": f"{rel_dir}/firmware.bin", "dat": f"{rel_dir}/firmware.dat", "name": name}
+            print(f"  effaceur {name} ✓")
+        for p in prefixes:
+            by_board[p] = done[zip_name]
+    return by_board
+
+
 def main(out_dir):
     fw_root = os.path.join(out_dir, "firmware")
     os.makedirs(fw_root, exist_ok=True)
@@ -121,12 +157,16 @@ def main(out_dir):
             boards.setdefault(board, {})[role] = entry
             print(f"  {board} ✓")
 
+    print("effaceurs :")
+    erase = erasers(out_dir)
+
     catalog = {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source": f"https://github.com/{REPO}",
         "roles": roles,
         "boards": sorted(
-            ({"id": b, "name": NAMES.get(b, b.replace("_", " ")), "featured": b in FEATURED, "firmware": fw}
+            ({"id": b, "name": NAMES.get(b, b.replace("_", " ")), "featured": b in FEATURED, "firmware": fw,
+              **({"erase": erase[b]} if b in erase else {})}
              for b, fw in boards.items()),
             key=lambda x: (not x["featured"], x["name"].lower()),
         ),

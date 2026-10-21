@@ -47,6 +47,19 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .9em; }
 .accent { color: var(--accent); }
 .sub { margin: 4px 0 0; color: var(--muted); }
 
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 16px 0 0; }
+.tab {
+  text-align: left; padding: 12px 16px; border-radius: 12px;
+  border: 2px solid var(--border); background: var(--card);
+}
+.tab[aria-selected="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+#tab-reset[aria-selected="true"] { border-color: var(--warn-border); background: var(--warn-bg); }
+.tab-title { display: block; font-weight: 700; font-size: 1.05rem; }
+.tab-desc { display: block; color: var(--muted); font-size: .88rem; }
+.tabinfo { font-size: .95rem; }
+.notice.tabinfo:not(.warn) { background: var(--ok-bg); border: 1px solid var(--ok-border); }
+body.mode-reset #install { background: #d97706; border-color: #d97706; color: #fff; }
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);

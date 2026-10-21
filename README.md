@@ -4,6 +4,13 @@ Installe [MeshCore](https://github.com/meshcore-dev/MeshCore) en **Companion Blu
 
 👉 **https://nitrus21.github.io/meshcore-installer/**
 
+## Deux onglets
+
+- **🔄 Mise à jour** : réécrit uniquement l'application MeshCore. Le nom, les contacts, les canaux, la clé d'identité et les réglages radio sont conservés.
+- **🧹 Tout réinitialiser** : installe d'abord un firmware « effaceur » qui formate le stockage de la carte (LittleFS interne, ou flash QSPI selon la carte) et rend la main au bootloader. MeshCore est ensuite installé sur une carte vierge. À utiliser quand on vient de Meshtastic, qu'on change de rôle, ou qu'une carte se comporte mal. Les effaceurs sont ceux du [flasher officiel MeshCore](https://flasher.meshcore.io), téléchargés au moment de la publication. 35 des 50 cartes en ont un.
+
+La détection choisit le bon onglet : Meshtastic détecté → « Tout réinitialiser », MeshCore détecté → « Mise à jour » (avec la version installée). Le lien `#reset` ouvre directement le second onglet.
+
 ## Fonctionnement
 
 - **Navigateur** : Chrome ou Edge sur ordinateur, qui gèrent Web Serial. Firefox, Safari et iPhone ne sont pas compatibles. Le fichier `.uf2` reste téléchargeable dans tous les cas.

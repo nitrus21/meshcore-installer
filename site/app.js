@@ -9,6 +9,15 @@ const HIGH_POWER = /30dbm|33dbm|1W|RAK_3401|ProMicro|e22/i;
 let catalog = null;
 let busy = false;
 let detectedPort = null; // port choisi pendant la détection, réutilisé pour l'installation
+let mode = 'update';     // onglet : 'update' (conserve les paramètres) ou 'reset' (efface tout)
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === m)));
+  document.body.classList.toggle('mode-reset', m === 'reset');
+  if (catalog) update();
+  else document.querySelectorAll('[data-mode]').forEach((el) => { el.hidden = el.dataset.mode !== m; });
+}
 
 // ---------- Catalogue ----------
 
@@ -61,9 +70,11 @@ function update() {
   }
   if (b && !b.firmware[role()]) radios.find((r) => !r.disabled).checked = true;
 
-  // N'afficher que les sections utiles au rôle choisi
+  // N'afficher que les sections utiles au rôle et à l'onglet choisis
   const r = role();
-  document.querySelectorAll('[data-role]').forEach((el) => { el.hidden = el.dataset.role !== r; });
+  document.querySelectorAll('[data-role], [data-mode]').forEach((el) => {
+    el.hidden = (el.dataset.role && el.dataset.role !== r) || (el.dataset.mode && el.dataset.mode !== mode);
+  });
   if (r !== 'repeater' && con.port) conDisconnect();
   $(r === 'companion' ? 'done-repeater' : 'done-companion').hidden = true;
 
@@ -82,8 +93,17 @@ function update() {
     return;
   }
   $('fw-info').textContent = `MeshCore ${fw.version} · ${(fw.size / 1024).toFixed(0)} Ko`;
-  $('install').disabled = busy || !hasSerial;
-  $('uf2').hidden = !fw.uf2;
+
+  const resetBlocked = mode === 'reset' && !b.erase;
+  $('reset-unavailable').hidden = !resetBlocked;
+  if (resetBlocked) {
+    $('reset-unavailable').innerHTML = r === 'repeater'
+      ? '<b>Effacement automatique non disponible pour cette carte.</b> Faites une « Mise à jour », puis dans la console du répéteur (étape 4) tapez <code>erase</code> puis <code>reboot</code>.'
+      : '<b>Effacement automatique non disponible pour cette carte.</b> Utilisez l’onglet « Mise à jour » ; pour repartir de zéro, réinitialisez l’appareil depuis l’application MeshCore.';
+  }
+  $('install').textContent = mode === 'reset' ? '🧹 Effacer et installer' : '🔄 Mettre à jour';
+  $('install').disabled = busy || !hasSerial || resetBlocked;
+  $('uf2').hidden = !fw.uf2 || mode === 'reset';
   if (fw.uf2) {
     $('uf2').href = fw.uf2;
     $('uf2').download = fw.uf2.split('/').pop();
@@ -126,24 +146,31 @@ async function fetchBytes(url) {
 
 // ---------- Installation ----------
 
-// Après le "touch" 1200 bauds la carte se reconnecte avec un nouveau port série.
+// Après un redémarrage la carte se reconnecte avec un nouveau port série.
 // Si le navigateur l'a déjà autorisé on le récupère seul, sinon on demande un clic.
-function waitBootloaderPort(timeoutMs = 8000) {
-  return new Promise((resolve, reject) => {
+// settleMs : attendre que la carte ne se reconnecte plus (plusieurs redémarrages d'affilée).
+function waitBootloaderPort(timeoutMs = 8000, settleMs = 0) {
+  return new Promise((resolve) => {
     const btn = $('pick-bootloader');
     let done = false;
+    let settle = null;
     const finish = (port) => {
       if (done) return;
       done = true;
+      clearTimeout(settle);
       navigator.serial.removeEventListener('connect', onConnect);
       btn.hidden = true;
       btn.onclick = null;
       resolve(port);
     };
-    const onConnect = (e) => finish(e.target);
+    const onConnect = (e) => {
+      if (!settleMs) return finish(e.target);
+      clearTimeout(settle);
+      settle = setTimeout(() => finish(e.target), settleMs);
+    };
     navigator.serial.addEventListener('connect', onConnect);
     setTimeout(() => {
-      if (done) return;
+      if (done || settle) return;
       log('Cliquez sur « Sélectionner le port du bootloader » et choisissez le nouveau port de la carte.');
       btn.hidden = false;
       btn.onclick = async () => {
@@ -154,10 +181,50 @@ function waitBootloaderPort(timeoutMs = 8000) {
   });
 }
 
+async function dfuFlash(port, dat, bin) {
+  const dfu = new NordicDfu(port, { log, progress: setProgress });
+  await dfu.open();
+  try {
+    await dfu.flash(dat, bin);
+  } finally {
+    await dfu.close();
+  }
+}
+
+async function toBootloader(port) {
+  log('Redémarrage de la carte en mode bootloader (1200 bauds)…');
+  await touch1200(port);
+  port = await waitBootloaderPort();
+  await sleep(500);
+  log('Bootloader détecté.');
+  return port;
+}
+
+// Après l'effaceur, la carte formate son stockage puis redémarre (souvent directement en bootloader).
+// On réessaie jusqu'à tomber sur le bootloader, en relançant le « touch » 1200 bauds si besoin.
+async function flashAfterErase(port, dat, bin) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await dfuFlash(port, dat, bin);
+    } catch (e) {
+      if (attempt >= 3) throw e;
+      if (/ne répond pas/.test(e.message)) {
+        try { port = await toBootloader(port); continue; } catch {}
+      }
+      log('La carte redémarre, nouvelle tentative…');
+      port = await waitBootloaderPort(10000, 1500);
+      await sleep(500);
+    }
+  }
+}
+
 async function install() {
   const fw = firmware();
+  const b = board();
   const r = role();
   if (!fw || busy) return;
+  const reset = mode === 'reset';
+  if (reset && !confirm(`Tout effacer sur « ${b.name} » ?\n\nNom, contacts, canaux, clé d’identité et réglages seront supprimés, puis MeshCore sera installé.`)) return;
   busy = true;
   update();
   $('log').textContent = '';
@@ -165,31 +232,36 @@ async function install() {
   setProgress(0);
 
   try {
-    log(`Carte : ${board().name} — ${r === 'companion' ? 'Companion Bluetooth' : 'Répéteur'} ${fw.version}`);
-    const filesP = Promise.all([fetchBytes(`${fw.bin}?v=${fw.version}`), fetchBytes(`${fw.dat}?v=${fw.version}`)]);
+    log(`Carte : ${b.name} — ${r === 'companion' ? 'Companion Bluetooth' : 'Répéteur'} ${fw.version}`);
+    log(reset ? 'Mode : réinitialisation complète' : 'Mode : mise à jour (paramètres conservés)');
+    const filesP = Promise.all([
+      fetchBytes(`${fw.bin}?v=${fw.version}`), fetchBytes(`${fw.dat}?v=${fw.version}`),
+      ...(reset ? [fetchBytes(b.erase.bin), fetchBytes(b.erase.dat)] : []),
+    ]);
     let port = detectedPort || await pickPort();
     detectedPort = null;
     const bridge = usbBridge(port.getInfo());
     if (bridge) throw new Error(bridgeMessage(bridge));
-    const [bin, dat] = await filesP;
+    const [bin, dat, eraseBin, eraseDat] = await filesP;
 
-    if (!$('in-bootloader').checked) {
-      log('Redémarrage de la carte en mode bootloader (1200 bauds)…');
-      await touch1200(port);
-      port = await waitBootloaderPort();
+    if (!$('in-bootloader').checked) port = await toBootloader(port);
+
+    if (reset) {
+      log('Étape 1/2 : installation du programme d’effacement…');
+      await dfuFlash(port, eraseDat, eraseBin);
+      log('Effacement du stockage en cours…');
+      port = await waitBootloaderPort(15000, 2500);
       await sleep(500);
-      log('Bootloader détecté.');
-    }
-
-    const dfu = new NordicDfu(port, { log, progress: setProgress });
-    await dfu.open();
-    try {
-      await dfu.flash(dat, bin);
-    } finally {
-      await dfu.close();
+      log('Étape 2/2 : installation de MeshCore…');
+      setProgress(0);
+      await flashAfterErase(port, dat, bin);
+    } else {
+      await dfuFlash(port, dat, bin);
     }
     setProgress(1);
-    log('✅ Installation terminée. La carte redémarre sous MeshCore.');
+    log(reset
+      ? '✅ Carte effacée et MeshCore installé. Elle redémarre avec une nouvelle identité.'
+      : '✅ Mise à jour terminée. La carte redémarre sous MeshCore avec tous ses paramètres.');
     $(r === 'companion' ? 'done-companion' : 'done-repeater').hidden = false;
     if (r === 'repeater') $('console-card').scrollIntoView({ behavior: 'smooth' });
   } catch (e) {
@@ -289,10 +361,17 @@ async function detect() {
       const { board: name, version } = probe.meshcore;
       sources.push({ label: `MeshCore ${version || ''} présent — carte « ${name || '?'} »`, ids: meshcoreCandidates(name), strong: true });
       document.querySelector('input[name=role][value=repeater]').checked = true;
+      const latest = catalog.roles.repeater.tag.replace('repeater-', '');
+      notes.push(version === latest
+        ? `Répéteur MeshCore déjà à jour (${version}).`
+        : `Répéteur MeshCore ${version || '?'} installé → ${latest} disponible : utilisez l’onglet « Mise à jour » pour garder ses paramètres.`);
+      setMode('update');
     }
     if (probe?.meshtastic) {
       const { firmware, hwModel } = probe.meshtastic;
       sources.push({ label: `Meshtastic ${firmware || ''} présent — modèle matériel n°${hwModel}`, ids: meshtasticCandidates(hwModel), strong: true });
+      notes.push('Meshtastic détecté : l’onglet « Tout réinitialiser » a été sélectionné pour partir d’une carte propre.');
+      setMode('reset');
     }
     if (probe && !probe.meshcore && !probe.meshtastic) {
       notes.push('Aucun firmware ne répond sur le port série (Companion Bluetooth, carte vide ou firmware inconnu).');
@@ -418,6 +497,8 @@ if (!hasSerial) {
 }
 $('detect').addEventListener('click', detect);
 $('detect-uf2').addEventListener('click', () => $('uf2-file').click());
+document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => { if (!busy) setMode(t.dataset.tab); }));
+setMode(location.hash === '#reset' ? 'reset' : 'update');
 $('uf2-file').addEventListener('change', detectUf2);
 $('board').addEventListener('change', update);
 $('board-search').addEventListener('input', (e) => { renderBoards(e.target.value); update(); });

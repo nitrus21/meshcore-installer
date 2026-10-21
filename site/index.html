@@ -24,6 +24,26 @@
       Vous pouvez quand même télécharger le fichier <code>.uf2</code> ci-dessous.
     </div>
 
+    <nav class="tabs" role="tablist" aria-label="Type d’installation">
+      <button class="tab" role="tab" id="tab-update" data-tab="update" aria-selected="true">
+        <span class="tab-title">🔄 Mise à jour</span>
+        <span class="tab-desc">conserve tous vos paramètres</span>
+      </button>
+      <button class="tab" role="tab" id="tab-reset" data-tab="reset" aria-selected="false">
+        <span class="tab-title">🧹 Tout réinitialiser</span>
+        <span class="tab-desc">efface tout puis installe</span>
+      </button>
+    </nav>
+    <div class="notice tabinfo" data-mode="update">
+      Installe la dernière version de MeshCore <b>sans rien effacer</b> : nom, contacts, canaux, clé d’identité,
+      mot de passe et réglages radio sont conservés. À utiliser pour une carte qui tourne déjà sous MeshCore dans le même rôle.
+    </div>
+    <div class="notice warn tabinfo" data-mode="reset">
+      <b>Efface toutes les données de la carte</b> (nom, contacts, canaux, clé d’identité, réglages) puis installe MeshCore.
+      La carte aura une <b>nouvelle identité</b>. Recommandé si elle vient de <b>Meshtastic</b>, si vous changez de rôle
+      (Companion ↔ Répéteur) ou si elle se comporte mal.
+    </div>
+
     <section class="card">
       <h2><span class="step">1</span> Votre carte</h2>
       <div class="actions detect-actions">
@@ -65,15 +85,22 @@
     </section>
 
     <section class="card">
-      <h2><span class="step">3</span> Installation</h2>
-      <ol class="howto">
+      <h2><span class="step">3</span> <span data-mode="update">Mise à jour</span><span data-mode="reset">Réinitialisation et installation</span></h2>
+      <ol class="howto" data-mode="update">
         <li>Branchez la carte avec un câble USB <b>data</b>.</li>
-        <li>Cliquez sur <b>Installer</b> et choisissez le port série de la carte.</li>
-        <li>La carte redémarre seule en mode bootloader, puis le firmware est écrit (≈ 1 min).</li>
+        <li>Cliquez sur <b>Mettre à jour</b> et choisissez le port série de la carte.</li>
+        <li>La carte redémarre seule en mode bootloader, puis le firmware est écrit (≈ 30 s). Vos paramètres restent intacts.</li>
       </ol>
+      <ol class="howto" data-mode="reset">
+        <li>Branchez la carte avec un câble USB <b>data</b>.</li>
+        <li>Cliquez sur <b>Effacer et installer</b> et choisissez le port série de la carte.</li>
+        <li>Un petit programme d’effacement est installé : il formate le stockage de la carte.</li>
+        <li>MeshCore est ensuite installé sur la carte vierge (≈ 1 min en tout).</li>
+      </ol>
+      <div id="reset-unavailable" class="notice warn" hidden></div>
       <label class="check"><input type="checkbox" id="in-bootloader"> Ma carte est déjà en mode bootloader (double appui sur RESET)</label>
       <div class="actions">
-        <button id="install" class="primary">⚡ Installer</button>
+        <button id="install" class="primary">🔄 Mettre à jour</button>
         <a id="uf2" class="button" download hidden>⬇ Télécharger le .uf2</a>
       </div>
       <button id="pick-bootloader" class="primary" hidden>Sélectionner le port du bootloader</button>
@@ -88,7 +115,7 @@
       <div id="done-repeater" class="notice ok" hidden>
         <strong>Répéteur installé !</strong> Configurez-le à l’étape 4 (nom, mot de passe, radio).
       </div>
-      <details class="uf2help">
+      <details class="uf2help" data-mode="update">
         <summary>Installer à la main avec le fichier .uf2</summary>
         <ol>
           <li>Téléchargez le fichier <code>.uf2</code>.</li>
@@ -101,9 +128,12 @@
 
     <section class="card" data-role="companion">
       <h2><span class="step">4</span> Connecter à l’application</h2>
-      <ol class="howto">
+      <p data-mode="update">Rien à refaire : rouvrez l’application <b>MeshCore</b>, l’appareil se reconnecte avec ses contacts et ses réglages.
+        S’il ne se reconnecte pas, supprimez-le des appareils Bluetooth du téléphone puis ajoutez-le à nouveau.</p>
+      <ol class="howto" data-mode="reset">
         <li>Installez l’application <b>MeshCore</b> : <a href="https://apps.apple.com/app/meshcore/id6742354151" target="_blank" rel="noopener">iPhone</a>,
           <a href="https://play.google.com/store/apps/details?id=com.liamcottle.meshcore.android" target="_blank" rel="noopener">Android</a> ou <a href="https://app.meshcore.nz" target="_blank" rel="noopener">version web</a>.</li>
+        <li>Sur le téléphone, supprimez l’ancien appairage Bluetooth de la carte s’il existe (l’identité a changé).</li>
         <li>Activez le Bluetooth et ajoutez l’appareil. Code PIN par défaut : <code>123456</code> (ou celui affiché sur l’écran de la carte).</li>
         <li>Dans les paramètres radio, choisissez le preset de votre région. En France : <b>EU/UK (Narrow)</b>, 869.618 MHz, SF8, BW62.5, CR8.</li>
         <li>Donnez un nom à votre nœud et réglez la puissance TX.</li>
