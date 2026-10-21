@@ -19,14 +19,14 @@ ROLES = {
     "companion": {"tag": "companion-v", "pattern": r"^(?P<board>.+)_companion_radio_ble-(?P<ver>v[\d.]+)-[0-9a-f]+\.zip$"},
     "repeater": {"tag": "repeater-v", "pattern": r"^(?P<board>.+)_repeater-(?P<ver>v[\d.]+)-[0-9a-f]+\.zip$"},
 }
-# ESP32 : image complète « -merged.bin » (bootloader + partitions + application, écrite en 0x0)
-# et application seule « .bin » (écrite en 0x10000, conserve les données).
+# ESP32 : image complète « -merged.bin » (bootloader + partitions + application, écrite en 0x0).
+# La mise à jour n'en réécrit que l'application, repérée dans la table des partitions.
 ESP32_PATTERNS = {
     "companion": r"^(?P<board>.+)_companion_radio_ble-(?P<ver>v[\d.]+)-[0-9a-f]+-merged\.bin$",
     "repeater": r"^(?P<board>.+)_repeater-(?P<ver>v[\d.]+)-[0-9a-f]+-merged\.bin$",
 }
-# Cartes ESP32 proposées (les autres restent à valider une par une).
-ESP32_BOARDS = {"Heltec_v3"}
+ESP32_SKIP = re.compile(r"_logging$")  # builds de débogage
+ESP32_SOC = {0: "ESP32", 2: "ESP32-S2", 5: "ESP32-C3", 9: "ESP32-S3", 12: "ESP32-C2", 13: "ESP32-C6", 16: "ESP32-H2"}
 
 # Noms lisibles ; les cartes absentes gardent leur identifiant de release.
 NAMES = {
@@ -63,7 +63,51 @@ NAMES = {
     "ThinkNode_M4": "Elecrow ThinkNode M4",
     "ThinkNode_M6": "Elecrow ThinkNode M6",
     "ThinkNode_M8": "Elecrow ThinkNode M8",
+    # ESP32
+    "Ebyte_EoRa-S3": "Ebyte EoRa-S3",
+    "Generic_E22_sx1262": "ESP32 générique + Ebyte E22 (SX1262)",
+    "Generic_E22_sx1268": "ESP32 générique + Ebyte E22 (SX1268)",
+    "Heltec_ct62": "Heltec HT-CT62",
+    "Heltec_E213": "Heltec Vision Master E213",
+    "Heltec_E290": "Heltec Vision Master E290",
+    "heltec_rc32": "Heltec RC32",
+    "heltec_rc32_without_display": "Heltec RC32 (sans écran)",
+    "heltec_tracker_v2": "Heltec Wireless Tracker V2",
+    "Heltec_v2": "Heltec WiFi LoRa 32 V2",
     "Heltec_v3": "Heltec WiFi LoRa 32 V3",
+    "heltec_v4": "Heltec WiFi LoRa 32 V4",
+    "heltec_v4_expansionkit": "Heltec V4 + Expansion Kit",
+    "heltec_v4_tft": "Heltec V4 + Expansion Kit (écran tactile)",
+    "heltec_v4_r8": "Heltec V4 R8",
+    "heltec_v4_r8_tft": "Heltec V4 R8 (écran tactile)",
+    "Heltec_Wireless_Paper": "Heltec Wireless Paper",
+    "Heltec_Wireless_Tracker": "Heltec Wireless Tracker",
+    "Heltec_WSL3": "Heltec Wireless Stick Lite V3",
+    "LilyGo_T3S3_sx1262": "LilyGO T3-S3 (SX1262)",
+    "LilyGo_T3S3_sx1276": "LilyGO T3-S3 (SX1276)",
+    "LilyGo_TBeam_1W": "LilyGO T-Beam 1 W",
+    "LilyGo_TDeck": "LilyGO T-Deck",
+    "LilyGo_TETH_Elite_sx1262": "LilyGO T-ETH Elite (SX1262)",
+    "LilyGo_TLora_V2_1_1_6": "LilyGO LoRa32 V2.1_1.6",
+    "M5Stack_Unit_C6L": "M5Stack Unit C6L",
+    "Meshadventurer_sx1262": "Meshadventurer (SX1262)",
+    "Meshadventurer_sx1268": "Meshadventurer (SX1268)",
+    "meshnology_w12": "Meshnology W12",
+    "RAK_3112": "RAK WisBlock 3112",
+    "Station_G2": "B&Q Station G2",
+    "Station_G3_ESP32": "B&Q Station G3",
+    "T_Beam_S3_Supreme_SX1262": "LilyGO T-Beam Supreme (SX1262)",
+    "Tbeam_SX1262": "LilyGO T-Beam (SX1262)",
+    "Tbeam_SX1276": "LilyGO T-Beam (SX1276)",
+    "Tenstar_C3_sx1262": "Tenstar ESP32-C3 (SX1262)",
+    "Tenstar_C3_sx1268": "Tenstar ESP32-C3 (SX1268)",
+    "ThinkNode_M2": "Elecrow ThinkNode M2",
+    "ThinkNode_M5": "Elecrow ThinkNode M5",
+    "ThinkNode_M7": "Elecrow ThinkNode M7",
+    "Waveshare_S3_LR1121": "Waveshare ESP32-S3 LR1121",
+    "Xiao_C3": "Seeed XIAO ESP32-C3",
+    "Xiao_S3": "Seeed XIAO ESP32-S3",
+    "Xiao_S3_WIO": "Seeed XIAO ESP32-S3 + Wio-SX1262",
 }
 FEATURED = ["ProMicro"]
 
@@ -93,6 +137,29 @@ def extract_dfu(zip_bytes):
             return None
         app = manifest["application"]
         return z.read(app["bin_file"]), z.read(app["dat_file"])
+
+
+def esp32_app(merged):
+    """Repère l'application dans une image merged ESP32 → (offset, longueur, puce).
+    Table des partitions en 0x8000 : partition « factory », sinon « ota_0 »."""
+    apps = {}
+    for i in range(0x8000, 0x9000, 32):
+        e = merged[i:i + 32]
+        if e[:2] != b"\xaa\x50":
+            break
+        if e[2] == 0:  # type « app »
+            apps.setdefault(e[3], int.from_bytes(e[4:8], "little"))
+    off = apps.get(0x00, apps.get(0x10))
+    if off is None or merged[off] != 0xE9:
+        raise ValueError("application introuvable dans l'image")
+    # En-tête d'image ESP (24 octets), puis segments (8 octets d'en-tête + données),
+    # octet de contrôle aligné sur 16 et, si demandé, SHA-256 de 32 octets.
+    pos = 24
+    for _ in range(merged[off + 1]):
+        pos += 8 + int.from_bytes(merged[off + pos + 4:off + pos + 8], "little")
+    length = (pos // 16 + 1) * 16 + (32 if merged[off + 23] == 1 else 0)
+    soc = ESP32_SOC.get(int.from_bytes(merged[off + 12:off + 14], "little"), "ESP32")
+    return off, length, soc
 
 
 FLASHER = "https://flasher.meshcore.io"
@@ -134,7 +201,7 @@ def erasers(out_dir):
 def main(out_dir):
     fw_root = os.path.join(out_dir, "firmware")
     os.makedirs(fw_root, exist_ok=True)
-    boards, roles, chips = {}, {}, {}
+    boards, roles, chips, socs = {}, {}, {}, {}
 
     for role, spec in ROLES.items():
         rel = latest_release(spec["tag"])
@@ -169,22 +236,32 @@ def main(out_dir):
 
         for name, asset in sorted(assets.items()):
             m = re.match(ESP32_PATTERNS[role], name)
-            if not m or m["board"] not in ESP32_BOARDS:
+            if not m or ESP32_SKIP.search(m["board"]):
                 continue
             board, version = m["board"], m["ver"]
+            if chips.get(board) == "nrf52":
+                print(f"  ignoré (identifiant déjà pris par une carte nRF52) : {name}")
+                continue
+            merged = http_get(asset["browser_download_url"])
+            try:
+                app_offset, app_size, soc = esp32_app(merged)
+            except ValueError as e:
+                print(f"  ignoré ({e}) : {name}")
+                continue
+            # Contrôle : même longueur que l'application seule publiée à côté
             app_name = name[: -len("-merged.bin")] + ".bin"
-            if app_name not in assets:
-                print(f"  ignoré (application seule absente) : {name}")
+            if app_name in assets and assets[app_name]["size"] != app_size:
+                print(f"  ignoré (application de {app_size} o au lieu de {assets[app_name]['size']}) : {name}")
                 continue
             rel_dir = f"firmware/{board}/{role}"
             os.makedirs(os.path.join(out_dir, rel_dir), exist_ok=True)
-            app = http_get(assets[app_name]["browser_download_url"])
-            for fname, data in (("firmware.bin", app), ("merged.bin", http_get(asset["browser_download_url"]))):
-                with open(os.path.join(out_dir, rel_dir, fname), "wb") as f:
-                    f.write(data)
-            boards.setdefault(board, {})[role] = {"version": version, "bin": f"{rel_dir}/firmware.bin", "merged": f"{rel_dir}/merged.bin", "size": len(app)}
+            with open(os.path.join(out_dir, rel_dir, "merged.bin"), "wb") as f:
+                f.write(merged)
+            boards.setdefault(board, {})[role] = {"version": version, "merged": f"{rel_dir}/merged.bin",
+                                                  "app_offset": app_offset, "size": app_size}
             chips[board] = "esp32"
-            print(f"  {board} (ESP32) ✓")
+            socs[board] = soc
+            print(f"  {board} ({soc}) ✓")
 
     print("effaceurs :")
     erase = erasers(out_dir)
@@ -194,7 +271,8 @@ def main(out_dir):
         "source": f"https://github.com/{REPO}",
         "roles": roles,
         "boards": sorted(
-            ({"id": b, "name": NAMES.get(b, b.replace("_", " ")), "chip": chips[b], "featured": b in FEATURED, "firmware": fw,
+            ({"id": b, "name": NAMES.get(b, b.replace("_", " ")), "chip": chips[b],
+              **({"soc": socs[b]} if b in socs else {}), "featured": b in FEATURED, "firmware": fw,
               **({"erase": erase[b]} if b in erase and chips[b] == "nrf52" else {})}
              for b, fw in boards.items()),
             key=lambda x: (not x["featured"], x["name"].lower()),

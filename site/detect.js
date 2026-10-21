@@ -10,6 +10,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const RAK = ['RAK_4631', 'RAK_WisMesh_Tag', 'RAK_3401', 'GAT562_30S_Mesh_Kit', 'GAT562_Mesh_Tracker_Pro', 'GAT562_Mesh_EVB_Pro', 'GAT562_Mesh_Watch13', 'R1Neo'];
 const HELTEC = ['Heltec_t114', 'Heltec_t114_without_display', 'Heltec_t096', 'Heltec_t1', 'Heltec_mesh_solar'];
 const THINKNODE = ['ThinkNode_M1', 'ThinkNode_M3', 'ThinkNode_M4', 'ThinkNode_M6', 'ThinkNode_M8'];
+const TBEAM = ['Tbeam_SX1262', 'Tbeam_SX1276'];
 const ADAFRUIT_FAMILY = [...RAK, ...HELTEC, 't1000e', 'LilyGo_T-Echo', 'LilyGo_T-Echo-Lite', 'LilyGo_T-Echo_Card', 'LilyGo_T_Impulse_Plus', 'Meshtiny', 'Minewsemi_me25ls01', 'MeshTracker_X1', 'Nano_G2_Ultra'];
 
 // VID:PID (application ou bootloader) → cartes possibles
@@ -27,7 +28,9 @@ const USB_IDS = {
   '2886:1667': ['WioTrackerL1', 'WioTrackerL1Eink', 'WioTrackerL1-1W'],
   '2886:1668': ['WioTrackerL1', 'WioTrackerL1Eink', 'WioTrackerL1-1W'],
   '2886:0057': ['t1000e', 'MeshTracker_X1'],
-  '10c4:ea60': ['Heltec_v3'], // CP2102 : pont USB-série générique, indice faible
+  // Ponts USB-série des ESP32 : génériques, simple indice
+  '10c4:ea60': ['Heltec_v3', 'Heltec_WSL3', 'Heltec_v2', ...TBEAM, 'LilyGo_TLora_V2_1_1_6'],
+  '1a86:55d4': [...TBEAM, 'LilyGo_TLora_V2_1_1_6'],
 };
 
 // Meshtastic HardwareModel (mesh.proto) → cartes MeshCore équivalentes
@@ -40,7 +43,16 @@ const MESHTASTIC_HW = {
   117: ['RAK_3401'], 119: ['ThinkNode_M4'], 120: ['ThinkNode_M6'], 127: ['Heltec_t096'], 130: ['ThinkNode_M8'],
   133: ['Heltec_t1'], 135: ['LilyGo_T_Impulse_Plus'], 136: ['LilyGo_T-Echo_Card'], 139: ['Heltec_tower_v2'],
   144: ['WioTrackerL1-1W'], 152: ['Mesh_pocket'],
-  43: ['Heltec_v3'],
+  // ESP32
+  3: ['LilyGo_TLora_V2_1_1_6'], 4: TBEAM, 5: ['Heltec_v2'], 10: ['Heltec_v2'], 12: ['T_Beam_S3_Supreme_SX1262'],
+  16: ['LilyGo_T3S3_sx1262', 'LilyGo_T3S3_sx1276'], 31: ['Station_G2'], 43: ['Heltec_v3'], 44: ['Heltec_WSL3'],
+  48: ['Heltec_Wireless_Tracker'], 49: ['Heltec_Wireless_Paper'], 50: ['LilyGo_TDeck'], 53: ['Heltec_ct62'],
+  57: ['Heltec_Wireless_Paper'], 58: ['Heltec_Wireless_Tracker'], 61: ['Ebyte_EoRa-S3'], 67: ['Heltec_E213'],
+  68: ['Heltec_E290'], 81: ['Xiao_S3', 'Xiao_S3_WIO'], 90: ['ThinkNode_M2'], 91: ['LilyGo_TETH_Elite_sx1262'],
+  106: ['RAK_3112'], 107: ['ThinkNode_M5'], 110: ['heltec_v4', 'heltec_v4_tft', 'heltec_v4_expansionkit'],
+  111: ['M5Stack_Unit_C6L'], 113: ['heltec_tracker_v2'], 122: ['LilyGo_TBeam_1W'], 129: ['ThinkNode_M7'],
+  132: ['heltec_v4_r8', 'heltec_v4_r8_tft'], 134: ['Station_G3_ESP32'], 141: ['heltec_rc32', 'heltec_rc32_without_display'],
+  145: ['meshnology_w12'],
 };
 
 // Réponse de la commande MeshCore « board » (getManufacturerName)
@@ -60,7 +72,21 @@ const MESHCORE_BOARD = [
   [/Minewsemi/i, ['Minewsemi_me25ls01']], [/ThinkNode-?\s?M1\b/i, ['ThinkNode_M1']], [/ThinkNode M3/i, ['ThinkNode_M3']],
   [/ThinkNode M4/i, ['ThinkNode_M4']], [/ThinkNode M6/i, ['ThinkNode_M6']], [/ThinkNode-?\s?M8/i, ['ThinkNode_M8']],
   [/muzi works R1 Neo/i, ['R1Neo']], [/muzi/i, ['muzi_base_uno', 'muzi_base_duo']],
-  [/Heltec V3/i, ['Heltec_v3']],
+  // ESP32 (les Wireless Tracker et WSL3 répondent « Heltec V3 », les T3-S3 / EoRa / E22 « Generic ESP32 »)
+  [/Heltec V4 R8 TFT/i, ['heltec_v4_r8_tft']], [/Heltec V4 R8/i, ['heltec_v4_r8']],
+  [/Heltec V4(\.\d)? TFT/i, ['heltec_v4_tft']], [/Heltec V4/i, ['heltec_v4', 'heltec_v4_expansionkit']],
+  [/Heltec V3/i, ['Heltec_v3', 'Heltec_WSL3', 'Heltec_Wireless_Tracker']], [/Heltec V2/i, ['Heltec_v2']],
+  [/Heltec CT62/i, ['Heltec_ct62']], [/Heltec E213/i, ['Heltec_E213']], [/Heltec E290/i, ['Heltec_E290']],
+  [/Heltec RC32/i, ['heltec_rc32', 'heltec_rc32_without_display']], [/Heltec Tracker V2/i, ['heltec_tracker_v2']],
+  [/Heltec Wireless Paper/i, ['Heltec_Wireless_Paper']], [/T-Beam 1W/i, ['LilyGo_TBeam_1W']],
+  [/LilyGo T-Beam/i, [...TBEAM, 'T_Beam_S3_Supreme_SX1262']], [/T-Deck/i, ['LilyGo_TDeck']],
+  [/T-ETH Elite/i, ['LilyGo_TETH_Elite_sx1262']], [/T-LoRa V2/i, ['LilyGo_TLora_V2_1_1_6']],
+  [/Unit C6L/i, ['M5Stack_Unit_C6L']], [/Meshadventurer/i, ['Meshadventurer_sx1262', 'Meshadventurer_sx1268']],
+  [/Meshnology W12/i, ['meshnology_w12']], [/RAK 3112/i, ['RAK_3112']], [/Station G2/i, ['Station_G2']],
+  [/Station G3/i, ['Station_G3_ESP32']], [/ThinkNode M2/i, ['ThinkNode_M2']], [/ThinkNode M5/i, ['ThinkNode_M5']],
+  [/ThinkNode M7/i, ['ThinkNode_M7']], [/Waveshare ESP32-S3-LR1121/i, ['Waveshare_S3_LR1121']],
+  [/Xiao S3 WIO/i, ['Xiao_S3_WIO']], [/Xiao S3/i, ['Xiao_S3']], [/Xiao C3/i, ['Xiao_C3', 'Tenstar_C3_sx1262', 'Tenstar_C3_sx1268']],
+  [/Generic ESP32/i, ['LilyGo_T3S3_sx1262', 'LilyGo_T3S3_sx1276', 'Ebyte_EoRa-S3', 'Generic_E22_sx1262', 'Generic_E22_sx1268']],
 ];
 
 // INFO_UF2.TXT (Model / Board-ID du bootloader)
@@ -83,16 +109,23 @@ const NRF52_VENDORS = [0x239a, 0x2886, 0x1915];
 const USB_BRIDGES = {
   '1a86:7523': 'CH340', '1a86:55d4': 'CH9102', '1a86:7522': 'CH340',
   '10c4:ea60': 'CP210x', '0403:6001': 'FTDI', '0403:6015': 'FTDI',
-  '303a:1001': 'ESP32-S3 (USB natif)', '303a:4001': 'ESP32-S3 (USB natif)',
 };
+
+// USB natif des ESP32-S3 / C3 / C6 (Espressif) : 1001 = USB-JTAG/série intégré, autres = TinyUSB
+const ESPRESSIF = 0x303a;
+export const ESP_USB_JTAG = 0x1001;
+export const isEspressifUsb = (info) => info?.usbVendorId === ESPRESSIF;
 
 // Filtres du sélecteur de port selon la puce de la carte ('nrf52', 'esp32' ou 'any')
 const PORT_FILTERS = {
   nrf52: NRF52_VENDORS.map((usbVendorId) => ({ usbVendorId })),
-  esp32: Object.keys(USB_BRIDGES).map((id) => {
-    const [v, p] = id.split(':').map((h) => parseInt(h, 16));
-    return { usbVendorId: v, usbProductId: p };
-  }),
+  esp32: [
+    ...Object.keys(USB_BRIDGES).map((id) => {
+      const [v, p] = id.split(':').map((h) => parseInt(h, 16));
+      return { usbVendorId: v, usbProductId: p };
+    }),
+    { usbVendorId: ESPRESSIF },
+  ],
 };
 export const portFilters = (chip) => PORT_FILTERS[chip] || [...PORT_FILTERS.nrf52, ...PORT_FILTERS.esp32];
 
@@ -100,6 +133,7 @@ export const isNrf52Usb = (info) => NRF52_VENDORS.includes(info?.usbVendorId);
 
 export function usbBridge(info) {
   if (!info?.usbVendorId) return null;
+  if (isEspressifUsb(info)) return 'ESP32 USB natif';
   return USB_BRIDGES[`${hex4(info.usbVendorId)}:${hex4(info.usbProductId)}`] || null;
 }
 

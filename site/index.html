@@ -93,16 +93,16 @@
       </ol>
       <ol class="howto" data-mode="update" data-chip="esp32">
         <li>Branchez la carte avec un câble USB <b>data</b>.</li>
-        <li>Cliquez sur <b>Mettre à jour</b> et choisissez le port série de la carte (souvent « CP210x » ou « USB-SERIAL CH340 »).</li>
+        <li>Cliquez sur <b>Mettre à jour</b> et choisissez le port série de la carte (souvent « CP210x », « USB-SERIAL CH340 » ou, en USB natif, « USB JTAG/serial debug unit »).</li>
         <li>La carte passe seule en mode programmation, puis MeshCore est écrit (≈ 30 s). Vos paramètres restent intacts.</li>
       </ol>
       <ol class="howto" data-mode="reset" data-chip="esp32">
         <li>Branchez la carte avec un câble USB <b>data</b>.</li>
-        <li>Cliquez sur <b>Effacer et installer</b> et choisissez le port série de la carte (souvent « CP210x » ou « USB-SERIAL CH340 »).</li>
+        <li>Cliquez sur <b>Effacer et installer</b> et choisissez le port série de la carte (souvent « CP210x », « USB-SERIAL CH340 » ou, en USB natif, « USB JTAG/serial debug unit »).</li>
         <li>Toute la mémoire flash est effacée, puis MeshCore est installé sur la carte vierge (≈ 1 min en tout).</li>
       </ol>
-      <p class="hint" data-chip="esp32">Si la carte ne répond pas : maintenez le bouton <b>PRG</b> (ou BOOT), appuyez sur <b>RST</b>, relâchez PRG, puis recommencez.
-        Sous Windows, installez au besoin le <a href="https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers" target="_blank" rel="noopener">pilote CP210x</a>.</p>
+      <p class="hint" data-chip="esp32">Si la carte ne répond pas : maintenez le bouton <b>BOOT</b> (ou PRG), appuyez sur <b>RST</b> (ou rebranchez le câble), relâchez BOOT, puis recommencez.
+        Sous Windows, installez au besoin le pilote <a href="https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers" target="_blank" rel="noopener">CP210x</a> ou <a href="https://www.wch-ic.com/downloads/CH341SER_EXE.html" target="_blank" rel="noopener">CH340/CH9102</a>.</p>
       <ol class="howto" data-mode="reset" data-chip="nrf52">
         <li>Branchez la carte avec un câble USB <b>data</b>.</li>
         <li>Cliquez sur <b>Effacer et installer</b> et choisissez le port série de la carte.</li>

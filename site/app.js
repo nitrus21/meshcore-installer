@@ -1,11 +1,11 @@
 import { NordicDfu, touch1200 } from './dfu.js?v=dev';
-import { flashEsp32, ESP32_APP_ADDRESS } from './esp32.js?v=dev';
-import { usbCandidates, probeSerial, meshtasticCandidates, meshcoreCandidates, uf2Candidates, parseUf2Info, usbBridge, isNrf52Usb, portFilters } from './detect.js?v=dev';
+import { flashEsp32 } from './esp32.js?v=dev';
+import { usbCandidates, probeSerial, meshtasticCandidates, meshcoreCandidates, uf2Candidates, parseUf2Info, usbBridge, isNrf52Usb, isEspressifUsb, ESP_USB_JTAG, portFilters } from './detect.js?v=dev';
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const hasSerial = 'serial' in navigator;
-const HIGH_POWER = /30dbm|33dbm|1W|RAK_3401|ProMicro|e22/i;
+const HIGH_POWER = /30dbm|33dbm|1W|RAK_3401|ProMicro|e22|Station_G/i;
 
 let catalog = null;
 let busy = false;
@@ -96,8 +96,8 @@ function update() {
   }
   if (highPower) {
     notes.push(r === 'companion'
-      ? '⚠ Carte avec amplificateur possible (E22 30 dBm / 1 W) : réduisez la puissance TX dans l’application après installation.'
-      : '⚠ Carte avec amplificateur possible (E22 30 dBm / 1 W) : réduisez la puissance TX dans la console après installation.');
+      ? '⚠ Carte avec amplificateur possible (30 dBm / 1 W ou plus) : réduisez la puissance TX dans l’application après installation.'
+      : '⚠ Carte avec amplificateur possible (30 dBm / 1 W ou plus) : réduisez la puissance TX dans la console après installation.');
   }
   $('board-note').hidden = !notes.length;
   $('board-note').textContent = notes.join(' ');
@@ -110,7 +110,7 @@ function update() {
     $('uf2').hidden = true;
     return;
   }
-  $('fw-info').textContent = `MeshCore ${fw.version} · ${(fw.size / 1024).toFixed(0)} Ko`;
+  $('fw-info').textContent = `MeshCore ${fw.version} · ${(fw.size / 1024).toFixed(0)} Ko${b.soc ? ` · ${b.soc}` : ''}`;
 
   const resetBlocked = mode === 'reset' && c === 'nrf52' && !b.erase;
   $('reset-unavailable').hidden = !resetBlocked;
@@ -138,7 +138,7 @@ function pickPort(c = chip()) {
 }
 
 function bridgeMessage(name) {
-  return `Ce port est un adaptateur USB-série ${name} : c’est un autre appareil (carte ESP32, Arduino…), pas une carte nRF52. ` +
+  return `Ce port (${name}) n’est pas une carte nRF52 : c’est un autre appareil (carte ESP32, Arduino…). ` +
     'Choisissez l’autre port, souvent nommé « USB Serial Device » ou du nom de la carte. Si c’est une carte ESP32, sélectionnez-la dans la liste.';
 }
 
@@ -148,7 +148,7 @@ function portMismatch(port, c) {
   const bridge = usbBridge(info);
   if (c === 'nrf52' && bridge) return bridgeMessage(bridge);
   if (c === 'esp32' && isNrf52Usb(info)) {
-    return 'Ce port appartient à une carte nRF52, pas à une carte ESP32. Choisissez votre carte dans la liste, ou le port de l’ESP32 (souvent « CP210x » ou « USB-SERIAL CH340 »).';
+    return 'Ce port appartient à une carte nRF52, pas à une carte ESP32. Choisissez votre carte dans la liste, ou le port de l’ESP32 (souvent « CP210x », « USB-SERIAL CH340 » ou « USB JTAG/serial debug unit »).';
   }
   return null;
 }
@@ -283,21 +283,32 @@ async function install() {
     log(`Carte : ${b.name} — ${r === 'companion' ? 'Companion Bluetooth' : 'Répéteur'} ${fw.version}`);
     log(reset ? 'Mode : réinitialisation complète' : 'Mode : mise à jour (paramètres conservés)');
     const fileP = c === 'esp32'
-      ? fetchBytes(`${reset ? fw.merged : fw.bin}?v=${fw.version}`)
+      ? fetchBytes(`${fw.merged}?v=${fw.version}`)
       : Promise.all([
         fetchBytes(`${fw.bin}?v=${fw.version}`), fetchBytes(`${fw.dat}?v=${fw.version}`),
         ...(reset ? [fetchBytes(b.erase.bin), fetchBytes(b.erase.dat)] : []),
       ]);
     fileP.catch(() => {}); // erreur relevée plus bas, après le choix du port
-    const port = detectedPort || await pickPort();
+    let port = detectedPort || await pickPort();
     detectedPort = null;
     const mismatch = portMismatch(port, c);
     if (mismatch) throw new Error(mismatch);
 
     if (c === 'esp32') {
-      // Mise à jour : application seule (réglages conservés) ; réinitialisation : effacement + image complète
-      await flashEsp32(port, await fileP, {
-        address: reset ? 0 : ESP32_APP_ADDRESS, eraseAll: reset, log, progress: setProgress,
+      // USB natif géré par TinyUSB (pas le USB-JTAG intégré) : le « touch » 1200 bauds
+      // redémarre la carte en mode programmation, avec un nouveau port.
+      const info = port.getInfo();
+      if (isEspressifUsb(info) && info.usbProductId !== ESP_USB_JTAG) {
+        log('Redémarrage de la carte en mode programmation (1200 bauds)…');
+        await touch1200(port);
+        port = await waitBootloaderPort();
+        await sleep(500);
+      }
+      // Mise à jour : application seule, découpée dans l'image complète (réglages conservés) ;
+      // réinitialisation : effacement + image complète en 0x0
+      const merged = await fileP;
+      await flashEsp32(port, reset ? merged : merged.subarray(fw.app_offset, fw.app_offset + fw.size), {
+        address: reset ? 0 : fw.app_offset, eraseAll: reset, log, progress: setProgress,
       });
     } else {
       await nrf52Install(port, await fileP, reset);
@@ -312,7 +323,7 @@ async function install() {
     if (e?.name === 'NotFoundError') log('Aucun port sélectionné.');
     else {
       log(`❌ Erreur : ${e.message || e}`);
-      if (c === 'nrf52' && !/adaptateur USB-série/.test(e.message)) log('Astuce : double-appuyez sur RESET, cochez « déjà en mode bootloader » et recommencez.');
+      if (c === 'nrf52' && !/n’est pas une carte nRF52/.test(e.message)) log('Astuce : double-appuyez sur RESET, cochez « déjà en mode bootloader » et recommencez.');
     }
   } finally {
     busy = false;
@@ -417,7 +428,7 @@ async function detect() {
       notes.push('Aucun firmware ne répond sur le port série (Companion Bluetooth, carte vide ou firmware inconnu).');
     }
     const usb = usbCandidates(port.getInfo());
-    if (usb.id) sources.push({ label: `Identifiant USB ${usb.id}${bridge ? ` (adaptateur ${bridge} : carte ESP32 probable)` : ''}`, ids: usb.boards, strong: false });
+    if (usb.id) sources.push({ label: `Identifiant USB ${usb.id}${bridge ? ` (${bridge} : carte ESP32 probable)` : ''}`, ids: usb.boards, strong: false });
     detectedPort = port;
     showDetection(sources, notes);
   } finally {

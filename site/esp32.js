@@ -1,11 +1,10 @@
-// Flash des cartes ESP32 avec esptool-js (bootloader ROM Espressif, reset auto via DTR/RTS du pont USB-série).
-//  - mise à jour      : application seule écrite en 0x10000, le reste de la flash (réglages, identité) est conservé
+// Flash des cartes ESP32 avec esptool-js (bootloader ROM Espressif). Passage en mode programmation
+// automatique : DTR/RTS du pont USB-série, ou reset USB-JTAG pour l'USB natif des S3 / C3 / C6.
+//  - mise à jour      : application seule (partition app), le reste de la flash (réglages, identité) est conservé
 //  - réinitialisation : effacement complet puis image « merged » (bootloader + partitions + application) en 0x0
 
 const ESPTOOL_URL = 'https://cdn.jsdelivr.net/npm/esptool-js@0.6.1/bundle.js';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-export const ESP32_APP_ADDRESS = 0x10000;
 
 export async function flashEsp32(port, data, { address, eraseAll, log, progress }) {
   const { ESPLoader, Transport } = await import(ESPTOOL_URL);
@@ -23,7 +22,7 @@ export async function flashEsp32(port, data, { address, eraseAll, log, progress 
       log('Connexion au bootloader ESP32…');
       await loader.main();
     } catch (e) {
-      throw new Error(`l’ESP32 ne répond pas (${e.message || e}). Maintenez le bouton PRG/BOOT, appuyez sur RST, relâchez PRG puis recommencez.`);
+      throw new Error(`l’ESP32 ne répond pas (${e.message || e}). Maintenez le bouton BOOT (ou PRG), appuyez sur RST (ou rebranchez le câble), relâchez BOOT puis recommencez.`);
     }
     if (eraseAll) log('Effacement complet de la flash (≈ 20 s)…');
     await loader.writeFlash({
@@ -33,7 +32,9 @@ export async function flashEsp32(port, data, { address, eraseAll, log, progress 
       reportProgress: (_, written, total) => progress(written / total),
     });
     log('Redémarrage de la carte…');
-    await loader.after('hard_reset');
+    let otg = false; // USB-OTG (TinyUSB) : reset plus lent
+    try { otg = !!(await loader.chip.usingUsbOtg?.(loader)); } catch {}
+    await loader.after('hard_reset', otg);
   } finally {
     // Impulsion RTS : certaines cartes restent sinon bloquées en reset après la déconnexion
     try {
