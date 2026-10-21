@@ -31,6 +31,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   margin: 0;
   background: var(--bg);
@@ -88,6 +89,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .role input:checked + .role-body { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .role input:focus-visible + .role-body { outline: 2px solid var(--accent); outline-offset: 2px; }
+.role.unavailable { cursor: not-allowed; opacity: .45; }
+.role.unavailable .role-desc::after { content: " (non disponible pour cette carte)"; }
 .role-title { display: block; font-weight: 600; }
 .role-title small { color: var(--muted); font-weight: normal; }
 .role-desc { display: block; color: var(--muted); font-size: .92rem; margin-top: 2px; }

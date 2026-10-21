@@ -52,10 +52,29 @@ const firmware = () => board()?.firmware[role()];
 
 function update() {
   const b = board();
+
+  // Rôles proposés par la carte : on grise ceux qui n'existent pas et on bascule si besoin
+  const radios = [...document.querySelectorAll('input[name=role]')];
+  for (const r of radios) {
+    r.disabled = !!b && !b.firmware[r.value];
+    r.closest('.role').classList.toggle('unavailable', r.disabled);
+  }
+  if (b && !b.firmware[role()]) radios.find((r) => !r.disabled).checked = true;
+
+  // N'afficher que les sections utiles au rôle choisi
+  const r = role();
+  document.querySelectorAll('[data-role]').forEach((el) => { el.hidden = el.dataset.role !== r; });
+  if (r !== 'repeater' && con.port) conDisconnect();
+  $(r === 'companion' ? 'done-repeater' : 'done-companion').hidden = true;
+
+  const highPower = !!b && HIGH_POWER.test(b.id);
+  $('board-note').hidden = !highPower;
+  $('board-note').textContent = r === 'companion'
+    ? '⚠ Carte avec amplificateur possible (E22 30 dBm / 1 W) : réduisez la puissance TX dans l’application après installation.'
+    : '⚠ Carte avec amplificateur possible (E22 30 dBm / 1 W) : réduisez la puissance TX dans la console après installation.';
+  document.querySelectorAll('[data-highpower]').forEach((el) => { el.hidden = !highPower; });
+
   const fw = firmware();
-  $('board-note').hidden = !b || !HIGH_POWER.test(b.id);
-  $('board-note').textContent = '⚠ Carte avec amplificateur possible (E22 30 dBm / 1 W) : pensez à réduire la puissance TX après installation.';
-  $('tx-warn').hidden = $('board-note').hidden;
   if (!fw) {
     $('fw-info').textContent = b ? 'Ce rôle n’est pas disponible pour cette carte.' : 'Aucune carte trouvée.';
     $('install').disabled = true;
