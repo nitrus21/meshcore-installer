@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Installateur MeshCore</title>
+  <meta name="description" content="Installez MeshCore (Companion ou Répéteur) sur une carte nRF52 directement depuis le navigateur.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='4' fill='%2322c55e'/><circle cx='6' cy='8' r='3' fill='%2322c55e'/><circle cx='26' cy='8' r='3' fill='%2322c55e'/><circle cx='16' cy='28' r='3' fill='%2322c55e'/><path d='M6 8L16 16L26 8M16 16V28' stroke='%2322c55e' stroke-width='2' fill='none'/></svg>">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <h1>Installateur <span class="accent">MeshCore</span></h1>
+      <p class="sub">Flashez une carte nRF52 en Companion ou Répéteur, directement depuis le navigateur, par USB.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="unsupported" class="notice warn" hidden>
+      <strong>Navigateur non compatible.</strong> L’installation par USB utilise Web Serial :
+      ouvrez cette page avec <b>Chrome</b> ou <b>Edge</b> sur ordinateur (Windows, macOS, Linux).
+      Vous pouvez quand même télécharger le fichier <code>.uf2</code> ci-dessous.
+    </div>
+
+    <section class="card">
+      <h2><span class="step">1</span> Votre carte</h2>
+      <div class="actions detect-actions">
+        <button id="detect" class="primary">🔍 Détecter ma carte</button>
+        <button id="detect-uf2" title="Si la carte est en mode bootloader (lecteur USB visible)">📂 Lire le lecteur du bootloader</button>
+      </div>
+      <div id="detect-result" class="detect" hidden></div>
+      <p class="hint">Ou choisissez-la dans la liste :</p>
+      <div class="row">
+        <input id="board-search" type="search" placeholder="Rechercher (RAK, T114, ProMicro…)" autocomplete="off">
+        <select id="board"></select>
+      </div>
+      <p id="board-note" class="hint" hidden></p>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">2</span> Rôle</h2>
+      <div class="roles">
+        <label class="role">
+          <input type="radio" name="role" value="companion" checked>
+          <span class="role-body">
+            <span class="role-title">📱 Companion <small>Bluetooth</small></span>
+            <span class="role-desc">Votre appareil personnel : il se connecte à l’application MeshCore du téléphone pour discuter.</span>
+          </span>
+        </label>
+        <label class="role">
+          <input type="radio" name="role" value="repeater">
+          <span class="role-body">
+            <span class="role-title">📡 Répéteur</span>
+            <span class="role-desc">Nœud autonome (point haut, solaire) qui relaie les messages et étend le réseau.</span>
+          </span>
+        </label>
+      </div>
+      <p id="fw-info" class="hint"></p>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">3</span> Installation</h2>
+      <ol class="howto">
+        <li>Branchez la carte avec un câble USB <b>data</b>.</li>
+        <li>Cliquez sur <b>Installer</b> et choisissez le port série de la carte.</li>
+        <li>La carte redémarre seule en mode bootloader, puis le firmware est écrit (≈ 1 min).</li>
+      </ol>
+      <label class="check"><input type="checkbox" id="in-bootloader"> Ma carte est déjà en mode bootloader (double appui sur RESET)</label>
+      <div class="actions">
+        <button id="install" class="primary">⚡ Installer</button>
+        <a id="uf2" class="button" download hidden>⬇ Télécharger le .uf2</a>
+      </div>
+      <button id="pick-bootloader" class="primary" hidden>Sélectionner le port du bootloader</button>
+      <div id="progress-wrap" hidden>
+        <progress id="progress" max="1" value="0"></progress>
+        <span id="progress-label">0 %</span>
+      </div>
+      <pre id="log" class="log" hidden></pre>
+      <div id="done-companion" class="notice ok" hidden>
+        <strong>Companion installé !</strong> Ouvrez l’application <b>MeshCore</b> (iOS / Android), ajoutez l’appareil en Bluetooth
+        (code PIN par défaut : <code>123456</code>) puis choisissez le preset radio de votre région (en France : <b>EU/UK (Narrow)</b>).
+      </div>
+      <div id="done-repeater" class="notice ok" hidden>
+        <strong>Répéteur installé !</strong> Configurez-le ci-dessous (nom, mot de passe, radio).
+      </div>
+      <details class="uf2help">
+        <summary>Installer à la main avec le fichier .uf2</summary>
+        <ol>
+          <li>Téléchargez le fichier <code>.uf2</code>.</li>
+          <li>Appuyez <b>deux fois rapidement</b> sur RESET : un lecteur USB apparaît (ex. <i>PROMICRO</i>, <i>RAK4631</i>, <i>T114</i>…).</li>
+          <li>Glissez le fichier sur ce lecteur. Il disparaît et la carte redémarre.<br>
+            Sous Windows, l’erreur <code>0x80070022</code> à la fin de la copie est normale.</li>
+        </ol>
+      </details>
+    </section>
+
+    <section class="card" id="console-card">
+      <h2><span class="step">4</span> Configurer un répéteur <small>(USB)</small></h2>
+      <p class="hint">Fermez l’onglet si un autre logiciel utilise déjà le port. Le Companion se configure depuis l’application, pas ici.</p>
+      <div class="actions">
+        <button id="con-connect">🔌 Connecter au répéteur</button>
+        <button id="con-disconnect" hidden>Déconnecter</button>
+      </div>
+      <div id="con-ui" hidden>
+        <div class="grid">
+          <label>Nom <input id="cfg-name" maxlength="31" placeholder="ex. Relais-Colline"></label>
+          <label>Mot de passe admin <input id="cfg-pass" type="password" maxlength="15" placeholder="laisser vide = inchangé" autocomplete="new-password"></label>
+          <label>Preset radio
+            <select id="cfg-preset">
+              <option value="">— inchangé —</option>
+              <option value="869.618,62.5,8,8">EU/UK (Narrow) — 869.618 MHz SF8 BW62.5 CR8</option>
+              <option value="869.525,250,11,5">EU/UK (Deprecated) — 869.525 MHz SF11 BW250 CR5</option>
+              <option value="869.432,62.5,7,5">Czech Republic (Narrow) — 869.432 MHz SF7 BW62.5 CR5</option>
+              <option value="869.618,62.5,7,5">Hungary — 869.618 MHz SF7 BW62.5 CR5</option>
+              <option value="433.650,250,11,5">EU 433 MHz (Long Range) — SF11 BW250 CR5</option>
+              <option value="433.650,62.5,8,8">EU 433 MHz (Narrow) — SF8 BW62.5 CR8</option>
+              <option value="910.525,62.5,7,5">Canada — 910.525 MHz SF7 BW62.5 CR5</option>
+            </select>
+          </label>
+          <label>Puissance TX (dBm) <input id="cfg-tx" type="number" min="-9" max="30" placeholder="ex. 17"></label>
+          <label>Latitude <input id="cfg-lat" inputmode="decimal" placeholder="ex. 45.7640"></label>
+          <label>Longitude <input id="cfg-lon" inputmode="decimal" placeholder="ex. 4.8357"></label>
+        </div>
+        <p id="tx-warn" class="hint warn-text" hidden>⚠ Module avec amplificateur (30 dBm / 1 W) : la puissance réelle est ~8–10 dB au-dessus du réglage. En Europe sur 869,4–869,65 MHz la limite est 500 mW (27 dBm ERP) : restez autour de 17 dBm.</p>
+        <div class="actions">
+          <button id="cfg-apply" class="primary">Appliquer</button>
+          <button data-cmd="ver">Version</button>
+          <button data-cmd="get radio">Radio</button>
+          <button data-cmd="get tx">TX</button>
+          <button data-cmd="advert">Annoncer (advert)</button>
+          <button data-cmd="reboot">Redémarrer</button>
+        </div>
+        <pre id="con-out" class="log console"></pre>
+        <form id="con-form" class="row">
+          <input id="con-input" placeholder="Commande (ex. get name, set repeat on, neighbors)" autocomplete="off">
+          <button type="submit">Envoyer</button>
+        </form>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <p id="catalog-info"></p>
+      <p>Firmwares officiels <a href="https://github.com/meshcore-dev/MeshCore" target="_blank" rel="noopener">MeshCore</a> (MIT), mis à jour automatiquement chaque jour.
+        Projet : <a href="https://github.com/nitrus21/meshcore-installer" target="_blank" rel="noopener">nitrus21/meshcore-installer</a>.</p>
+    </footer>
+  </main>
+</body>
+</html>
