@@ -1,5 +1,6 @@
 import { NordicDfu, touch1200 } from './dfu.js?v=dev';
-import { usbCandidates, probeSerial, meshtasticCandidates, meshcoreCandidates, uf2Candidates, parseUf2Info, usbBridge, NRF52_PORT_FILTERS } from './detect.js?v=dev';
+import { flashEsp32, ESP32_APP_ADDRESS } from './esp32.js?v=dev';
+import { usbCandidates, probeSerial, meshtasticCandidates, meshcoreCandidates, uf2Candidates, parseUf2Info, usbBridge, isNrf52Usb, portFilters } from './detect.js?v=dev';
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -16,7 +17,11 @@ function setMode(m) {
   document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === m)));
   document.body.classList.toggle('mode-reset', m === 'reset');
   if (catalog) update();
-  else document.querySelectorAll('[data-mode]').forEach((el) => { el.hidden = el.dataset.mode !== m; });
+  else {
+    document.querySelectorAll('[data-mode], [data-chip]').forEach((el) => {
+      el.hidden = (el.dataset.mode && el.dataset.mode !== m) || (el.dataset.chip && el.dataset.chip !== 'nrf52');
+    });
+  }
 }
 
 // ---------- Catalogue ----------
@@ -43,7 +48,8 @@ function renderBoards(filter = '') {
   sel.innerHTML = '';
   const groups = [
     ['Recommandé', catalog.boards.filter((b) => b.featured && match(b))],
-    ['Toutes les cartes nRF52', catalog.boards.filter((b) => !b.featured && match(b))],
+    ['Cartes nRF52', catalog.boards.filter((b) => !b.featured && b.chip !== 'esp32' && match(b))],
+    ['Cartes ESP32', catalog.boards.filter((b) => !b.featured && b.chip === 'esp32' && match(b))],
   ];
   for (const [label, list] of groups) {
     if (!list.length) continue;
@@ -58,6 +64,7 @@ function renderBoards(filter = '') {
 const board = () => catalog?.boards.find((b) => b.id === $('board').value);
 const role = () => document.querySelector('input[name=role]:checked').value;
 const firmware = () => board()?.firmware[role()];
+const chip = () => board()?.chip || 'nrf52';
 
 function update() {
   const b = board();
@@ -70,19 +77,30 @@ function update() {
   }
   if (b && !b.firmware[role()]) radios.find((r) => !r.disabled).checked = true;
 
-  // N'afficher que les sections utiles au rôle et à l'onglet choisis
+  // N'afficher que les sections utiles au rôle, à l'onglet et à la puce choisis
   const r = role();
-  document.querySelectorAll('[data-role], [data-mode]').forEach((el) => {
-    el.hidden = (el.dataset.role && el.dataset.role !== r) || (el.dataset.mode && el.dataset.mode !== mode);
+  const c = chip();
+  document.querySelectorAll('[data-role], [data-mode], [data-chip]').forEach((el) => {
+    el.hidden = (el.dataset.role && el.dataset.role !== r) || (el.dataset.mode && el.dataset.mode !== mode) ||
+      (el.dataset.chip && el.dataset.chip !== c);
   });
   if (r !== 'repeater' && con.port) conDisconnect();
   $(r === 'companion' ? 'done-repeater' : 'done-companion').hidden = true;
 
   const highPower = !!b && HIGH_POWER.test(b.id);
-  $('board-note').hidden = !highPower;
-  $('board-note').textContent = r === 'companion'
-    ? '⚠ Carte avec amplificateur possible (E22 30 dBm / 1 W) : réduisez la puissance TX dans l’application après installation.'
-    : '⚠ Carte avec amplificateur possible (E22 30 dBm / 1 W) : réduisez la puissance TX dans la console après installation.';
+  const notes = [];
+  if (c === 'esp32') {
+    notes.push(r === 'repeater'
+      ? '⚠ Carte ESP32 : elle consomme beaucoup plus qu’une carte nRF52 (plusieurs fois plus au repos). Déconseillée pour un répéteur solaire ou sur batterie : préférez-la alimentée sur secteur.'
+      : '⚠ Carte ESP32 : elle consomme beaucoup plus qu’une carte nRF52, l’autonomie sur batterie sera nettement plus courte.');
+  }
+  if (highPower) {
+    notes.push(r === 'companion'
+      ? '⚠ Carte avec amplificateur possible (E22 30 dBm / 1 W) : réduisez la puissance TX dans l’application après installation.'
+      : '⚠ Carte avec amplificateur possible (E22 30 dBm / 1 W) : réduisez la puissance TX dans la console après installation.');
+  }
+  $('board-note').hidden = !notes.length;
+  $('board-note').textContent = notes.join(' ');
   document.querySelectorAll('[data-highpower]').forEach((el) => { el.hidden = !highPower; });
 
   const fw = firmware();
@@ -94,7 +112,7 @@ function update() {
   }
   $('fw-info').textContent = `MeshCore ${fw.version} · ${(fw.size / 1024).toFixed(0)} Ko`;
 
-  const resetBlocked = mode === 'reset' && !b.erase;
+  const resetBlocked = mode === 'reset' && c === 'nrf52' && !b.erase;
   $('reset-unavailable').hidden = !resetBlocked;
   if (resetBlocked) {
     $('reset-unavailable').innerHTML = r === 'repeater'
@@ -112,15 +130,27 @@ function update() {
 
 // ---------- Port série ----------
 
-// Par défaut on ne propose que les ports des cartes nRF52 (évite de choisir un ESP32 / CH340 par erreur)
-function pickPort() {
-  const filters = $('all-ports').checked ? [] : NRF52_PORT_FILTERS;
+// Par défaut on ne propose que les ports du type de carte choisi : USB natif pour les nRF52,
+// adaptateurs USB-série (CP210x, CH340…) pour les ESP32. 'any' : les deux (détection).
+function pickPort(c = chip()) {
+  const filters = $('all-ports').checked ? [] : portFilters(c);
   return navigator.serial.requestPort({ filters });
 }
 
 function bridgeMessage(name) {
-  return `Ce port est un adaptateur USB-série ${name} : c’est un autre appareil (ESP32, Arduino…), pas une carte nRF52. ` +
-    'Choisissez l’autre port, souvent nommé « USB Serial Device » ou du nom de la carte.';
+  return `Ce port est un adaptateur USB-série ${name} : c’est un autre appareil (carte ESP32, Arduino…), pas une carte nRF52. ` +
+    'Choisissez l’autre port, souvent nommé « USB Serial Device » ou du nom de la carte. Si c’est une carte ESP32, sélectionnez-la dans la liste.';
+}
+
+// Message d'erreur si le port ne correspond pas à la puce de la carte choisie, sinon null
+function portMismatch(port, c) {
+  const info = port.getInfo();
+  const bridge = usbBridge(info);
+  if (c === 'nrf52' && bridge) return bridgeMessage(bridge);
+  if (c === 'esp32' && isNrf52Usb(info)) {
+    return 'Ce port appartient à une carte nRF52, pas à une carte ESP32. Choisissez votre carte dans la liste, ou le port de l’ESP32 (souvent « CP210x » ou « USB-SERIAL CH340 »).';
+  }
+  return null;
 }
 
 // ---------- Journal / progression ----------
@@ -218,10 +248,28 @@ async function flashAfterErase(port, dat, bin) {
   }
 }
 
+async function nrf52Install(port, [bin, dat, eraseBin, eraseDat], reset) {
+  if (!$('in-bootloader').checked) port = await toBootloader(port);
+
+  if (reset) {
+    log('Étape 1/2 : installation du programme d’effacement…');
+    await dfuFlash(port, eraseDat, eraseBin);
+    log('Effacement du stockage en cours…');
+    port = await waitBootloaderPort(15000, 2500);
+    await sleep(500);
+    log('Étape 2/2 : installation de MeshCore…');
+    setProgress(0);
+    await flashAfterErase(port, dat, bin);
+  } else {
+    await dfuFlash(port, dat, bin);
+  }
+}
+
 async function install() {
   const fw = firmware();
   const b = board();
   const r = role();
+  const c = chip();
   if (!fw || busy) return;
   const reset = mode === 'reset';
   if (reset && !confirm(`Tout effacer sur « ${b.name} » ?\n\nNom, contacts, canaux, clé d’identité et réglages seront supprimés, puis MeshCore sera installé.`)) return;
@@ -234,29 +282,25 @@ async function install() {
   try {
     log(`Carte : ${b.name} — ${r === 'companion' ? 'Companion Bluetooth' : 'Répéteur'} ${fw.version}`);
     log(reset ? 'Mode : réinitialisation complète' : 'Mode : mise à jour (paramètres conservés)');
-    const filesP = Promise.all([
-      fetchBytes(`${fw.bin}?v=${fw.version}`), fetchBytes(`${fw.dat}?v=${fw.version}`),
-      ...(reset ? [fetchBytes(b.erase.bin), fetchBytes(b.erase.dat)] : []),
-    ]);
-    let port = detectedPort || await pickPort();
+    const fileP = c === 'esp32'
+      ? fetchBytes(`${reset ? fw.merged : fw.bin}?v=${fw.version}`)
+      : Promise.all([
+        fetchBytes(`${fw.bin}?v=${fw.version}`), fetchBytes(`${fw.dat}?v=${fw.version}`),
+        ...(reset ? [fetchBytes(b.erase.bin), fetchBytes(b.erase.dat)] : []),
+      ]);
+    fileP.catch(() => {}); // erreur relevée plus bas, après le choix du port
+    const port = detectedPort || await pickPort();
     detectedPort = null;
-    const bridge = usbBridge(port.getInfo());
-    if (bridge) throw new Error(bridgeMessage(bridge));
-    const [bin, dat, eraseBin, eraseDat] = await filesP;
+    const mismatch = portMismatch(port, c);
+    if (mismatch) throw new Error(mismatch);
 
-    if (!$('in-bootloader').checked) port = await toBootloader(port);
-
-    if (reset) {
-      log('Étape 1/2 : installation du programme d’effacement…');
-      await dfuFlash(port, eraseDat, eraseBin);
-      log('Effacement du stockage en cours…');
-      port = await waitBootloaderPort(15000, 2500);
-      await sleep(500);
-      log('Étape 2/2 : installation de MeshCore…');
-      setProgress(0);
-      await flashAfterErase(port, dat, bin);
+    if (c === 'esp32') {
+      // Mise à jour : application seule (réglages conservés) ; réinitialisation : effacement + image complète
+      await flashEsp32(port, await fileP, {
+        address: reset ? 0 : ESP32_APP_ADDRESS, eraseAll: reset, log, progress: setProgress,
+      });
     } else {
-      await dfuFlash(port, dat, bin);
+      await nrf52Install(port, await fileP, reset);
     }
     setProgress(1);
     log(reset
@@ -268,7 +312,7 @@ async function install() {
     if (e?.name === 'NotFoundError') log('Aucun port sélectionné.');
     else {
       log(`❌ Erreur : ${e.message || e}`);
-      if (!/adaptateur USB-série/.test(e.message)) log('Astuce : double-appuyez sur RESET, cochez « déjà en mode bootloader » et recommencez.');
+      if (c === 'nrf52' && !/adaptateur USB-série/.test(e.message)) log('Astuce : double-appuyez sur RESET, cochez « déjà en mode bootloader » et recommencez.');
     }
   } finally {
     busy = false;
@@ -339,12 +383,8 @@ function showDetection(sources, notes = []) {
 async function detect() {
   if (busy) return;
   let port;
-  try { port = await pickPort(); } catch { return; }
+  try { port = await pickPort('any'); } catch { return; }
   const bridge = usbBridge(port.getInfo());
-  if (bridge) {
-    showDetectError('Ce n’est pas une carte nRF52.', bridgeMessage(bridge));
-    return;
-  }
   busy = true;
   $('detect').disabled = true;
   $('detect').textContent = '⏳ Détection…';
@@ -377,7 +417,7 @@ async function detect() {
       notes.push('Aucun firmware ne répond sur le port série (Companion Bluetooth, carte vide ou firmware inconnu).');
     }
     const usb = usbCandidates(port.getInfo());
-    if (usb.id) sources.push({ label: `Identifiant USB ${usb.id}`, ids: usb.boards, strong: false });
+    if (usb.id) sources.push({ label: `Identifiant USB ${usb.id}${bridge ? ` (adaptateur ${bridge} : carte ESP32 probable)` : ''}`, ids: usb.boards, strong: false });
     detectedPort = port;
     showDetection(sources, notes);
   } finally {

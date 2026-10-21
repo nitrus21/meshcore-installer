@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Installateur MeshCore</title>
-  <meta name="description" content="Installez MeshCore (Companion ou Répéteur) sur une carte nRF52 directement depuis le navigateur.">
+  <meta name="description" content="Installez MeshCore (Companion ou Répéteur) sur une carte nRF52 ou ESP32 directement depuis le navigateur.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='4' fill='%2322c55e'/><circle cx='6' cy='8' r='3' fill='%2322c55e'/><circle cx='26' cy='8' r='3' fill='%2322c55e'/><circle cx='16' cy='28' r='3' fill='%2322c55e'/><path d='M6 8L16 16L26 8M16 16V28' stroke='%2322c55e' stroke-width='2' fill='none'/></svg>">
   <link rel="stylesheet" href="style.css?v=dev">
   <script type="module" src="app.js?v=dev"></script>
@@ -13,7 +13,7 @@
   <header class="top">
     <div class="wrap">
       <h1>Installateur <span class="accent">MeshCore</span></h1>
-      <p class="sub">Flashez une carte nRF52 en Companion ou Répéteur, directement depuis le navigateur, par USB.</p>
+      <p class="sub">Flashez une carte nRF52 ou ESP32 en Companion ou Répéteur, directement depuis le navigateur, par USB.</p>
     </div>
   </header>
 
@@ -57,7 +57,7 @@
       <div id="detect-result" class="detect" hidden></div>
       <p class="hint">Ou choisissez-la dans la liste :</p>
       <div class="row">
-        <input id="board-search" type="search" placeholder="Rechercher (RAK, T114, ProMicro…)" autocomplete="off">
+        <input id="board-search" type="search" placeholder="Rechercher (RAK, T114, ProMicro, Heltec V3…)" autocomplete="off">
         <select id="board"></select>
       </div>
       <p id="board-note" class="hint" hidden></p>
@@ -86,19 +86,31 @@
 
     <section class="card">
       <h2><span class="step">3</span> <span data-mode="update">Mise à jour</span><span data-mode="reset">Réinitialisation et installation</span></h2>
-      <ol class="howto" data-mode="update">
+      <ol class="howto" data-mode="update" data-chip="nrf52">
         <li>Branchez la carte avec un câble USB <b>data</b>.</li>
         <li>Cliquez sur <b>Mettre à jour</b> et choisissez le port série de la carte.</li>
         <li>La carte redémarre seule en mode bootloader, puis le firmware est écrit (≈ 30 s). Vos paramètres restent intacts.</li>
       </ol>
-      <ol class="howto" data-mode="reset">
+      <ol class="howto" data-mode="update" data-chip="esp32">
+        <li>Branchez la carte avec un câble USB <b>data</b>.</li>
+        <li>Cliquez sur <b>Mettre à jour</b> et choisissez le port série de la carte (souvent « CP210x » ou « USB-SERIAL CH340 »).</li>
+        <li>La carte passe seule en mode programmation, puis MeshCore est écrit (≈ 30 s). Vos paramètres restent intacts.</li>
+      </ol>
+      <ol class="howto" data-mode="reset" data-chip="esp32">
+        <li>Branchez la carte avec un câble USB <b>data</b>.</li>
+        <li>Cliquez sur <b>Effacer et installer</b> et choisissez le port série de la carte (souvent « CP210x » ou « USB-SERIAL CH340 »).</li>
+        <li>Toute la mémoire flash est effacée, puis MeshCore est installé sur la carte vierge (≈ 1 min en tout).</li>
+      </ol>
+      <p class="hint" data-chip="esp32">Si la carte ne répond pas : maintenez le bouton <b>PRG</b> (ou BOOT), appuyez sur <b>RST</b>, relâchez PRG, puis recommencez.
+        Sous Windows, installez au besoin le <a href="https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers" target="_blank" rel="noopener">pilote CP210x</a>.</p>
+      <ol class="howto" data-mode="reset" data-chip="nrf52">
         <li>Branchez la carte avec un câble USB <b>data</b>.</li>
         <li>Cliquez sur <b>Effacer et installer</b> et choisissez le port série de la carte.</li>
         <li>Un petit programme d’effacement est installé : il formate le stockage de la carte.</li>
         <li>MeshCore est ensuite installé sur la carte vierge (≈ 1 min en tout).</li>
       </ol>
       <div id="reset-unavailable" class="notice warn" hidden></div>
-      <label class="check"><input type="checkbox" id="in-bootloader"> Ma carte est déjà en mode bootloader (double appui sur RESET)</label>
+      <label class="check" data-chip="nrf52"><input type="checkbox" id="in-bootloader"> Ma carte est déjà en mode bootloader (double appui sur RESET)</label>
       <div class="actions">
         <button id="install" class="primary">🔄 Mettre à jour</button>
         <a id="uf2" class="button" download hidden>⬇ Télécharger le .uf2</a>
@@ -115,7 +127,7 @@
       <div id="done-repeater" class="notice ok" hidden>
         <strong>Répéteur installé !</strong> Configurez-le à l’étape 4 (nom, mot de passe, radio).
       </div>
-      <details class="uf2help" data-mode="update">
+      <details class="uf2help" data-mode="update" data-chip="nrf52">
         <summary>Installer à la main avec le fichier .uf2</summary>
         <ol>
           <li>Téléchargez le fichier <code>.uf2</code>.</li>

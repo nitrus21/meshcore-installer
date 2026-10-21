@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Télécharge les derniers firmwares MeshCore nRF52 (Companion BLE + Repeater)
-depuis les releases GitHub et prépare le dossier publié sur GitHub Pages.
+"""Télécharge les derniers firmwares MeshCore (Companion BLE + Repeater) des cartes nRF52
+et ESP32 depuis les releases GitHub et prépare le dossier publié sur GitHub Pages.
 
 usage: python scripts/build_catalog.py <dossier_de_sortie>
 Le dossier de sortie reçoit firmware/catalog.json et firmware/<carte>/<rôle>/…
@@ -19,6 +19,14 @@ ROLES = {
     "companion": {"tag": "companion-v", "pattern": r"^(?P<board>.+)_companion_radio_ble-(?P<ver>v[\d.]+)-[0-9a-f]+\.zip$"},
     "repeater": {"tag": "repeater-v", "pattern": r"^(?P<board>.+)_repeater-(?P<ver>v[\d.]+)-[0-9a-f]+\.zip$"},
 }
+# ESP32 : image complète « -merged.bin » (bootloader + partitions + application, écrite en 0x0)
+# et application seule « .bin » (écrite en 0x10000, conserve les données).
+ESP32_PATTERNS = {
+    "companion": r"^(?P<board>.+)_companion_radio_ble-(?P<ver>v[\d.]+)-[0-9a-f]+-merged\.bin$",
+    "repeater": r"^(?P<board>.+)_repeater-(?P<ver>v[\d.]+)-[0-9a-f]+-merged\.bin$",
+}
+# Cartes ESP32 proposées (les autres restent à valider une par une).
+ESP32_BOARDS = {"Heltec_v3"}
 
 # Noms lisibles ; les cartes absentes gardent leur identifiant de release.
 NAMES = {
@@ -55,6 +63,7 @@ NAMES = {
     "ThinkNode_M4": "Elecrow ThinkNode M4",
     "ThinkNode_M6": "Elecrow ThinkNode M6",
     "ThinkNode_M8": "Elecrow ThinkNode M8",
+    "Heltec_v3": "Heltec WiFi LoRa 32 V3",
 }
 FEATURED = ["ProMicro"]
 
@@ -125,7 +134,7 @@ def erasers(out_dir):
 def main(out_dir):
     fw_root = os.path.join(out_dir, "firmware")
     os.makedirs(fw_root, exist_ok=True)
-    boards, roles = {}, {}
+    boards, roles, chips = {}, {}, {}
 
     for role, spec in ROLES.items():
         rel = latest_release(spec["tag"])
@@ -155,7 +164,27 @@ def main(out_dir):
                     f.write(http_get(assets[uf2_name]["browser_download_url"]))
                 entry["uf2"] = f"{rel_dir}/{uf2_name}"
             boards.setdefault(board, {})[role] = entry
+            chips[board] = "nrf52"
             print(f"  {board} ✓")
+
+        for name, asset in sorted(assets.items()):
+            m = re.match(ESP32_PATTERNS[role], name)
+            if not m or m["board"] not in ESP32_BOARDS:
+                continue
+            board, version = m["board"], m["ver"]
+            app_name = name[: -len("-merged.bin")] + ".bin"
+            if app_name not in assets:
+                print(f"  ignoré (application seule absente) : {name}")
+                continue
+            rel_dir = f"firmware/{board}/{role}"
+            os.makedirs(os.path.join(out_dir, rel_dir), exist_ok=True)
+            app = http_get(assets[app_name]["browser_download_url"])
+            for fname, data in (("firmware.bin", app), ("merged.bin", http_get(asset["browser_download_url"]))):
+                with open(os.path.join(out_dir, rel_dir, fname), "wb") as f:
+                    f.write(data)
+            boards.setdefault(board, {})[role] = {"version": version, "bin": f"{rel_dir}/firmware.bin", "merged": f"{rel_dir}/merged.bin", "size": len(app)}
+            chips[board] = "esp32"
+            print(f"  {board} (ESP32) ✓")
 
     print("effaceurs :")
     erase = erasers(out_dir)
@@ -165,8 +194,8 @@ def main(out_dir):
         "source": f"https://github.com/{REPO}",
         "roles": roles,
         "boards": sorted(
-            ({"id": b, "name": NAMES.get(b, b.replace("_", " ")), "featured": b in FEATURED, "firmware": fw,
-              **({"erase": erase[b]} if b in erase else {})}
+            ({"id": b, "name": NAMES.get(b, b.replace("_", " ")), "chip": chips[b], "featured": b in FEATURED, "firmware": fw,
+              **({"erase": erase[b]} if b in erase and chips[b] == "nrf52" else {})}
              for b, fw in boards.items()),
             key=lambda x: (not x["featured"], x["name"].lower()),
         ),

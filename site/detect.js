@@ -27,6 +27,7 @@ const USB_IDS = {
   '2886:1667': ['WioTrackerL1', 'WioTrackerL1Eink', 'WioTrackerL1-1W'],
   '2886:1668': ['WioTrackerL1', 'WioTrackerL1Eink', 'WioTrackerL1-1W'],
   '2886:0057': ['t1000e', 'MeshTracker_X1'],
+  '10c4:ea60': ['Heltec_v3'], // CP2102 : pont USB-série générique, indice faible
 };
 
 // Meshtastic HardwareModel (mesh.proto) → cartes MeshCore équivalentes
@@ -39,6 +40,7 @@ const MESHTASTIC_HW = {
   117: ['RAK_3401'], 119: ['ThinkNode_M4'], 120: ['ThinkNode_M6'], 127: ['Heltec_t096'], 130: ['ThinkNode_M8'],
   133: ['Heltec_t1'], 135: ['LilyGo_T_Impulse_Plus'], 136: ['LilyGo_T-Echo_Card'], 139: ['Heltec_tower_v2'],
   144: ['WioTrackerL1-1W'], 152: ['Mesh_pocket'],
+  43: ['Heltec_v3'],
 };
 
 // Réponse de la commande MeshCore « board » (getManufacturerName)
@@ -58,6 +60,7 @@ const MESHCORE_BOARD = [
   [/Minewsemi/i, ['Minewsemi_me25ls01']], [/ThinkNode-?\s?M1\b/i, ['ThinkNode_M1']], [/ThinkNode M3/i, ['ThinkNode_M3']],
   [/ThinkNode M4/i, ['ThinkNode_M4']], [/ThinkNode M6/i, ['ThinkNode_M6']], [/ThinkNode-?\s?M8/i, ['ThinkNode_M8']],
   [/muzi works R1 Neo/i, ['R1Neo']], [/muzi/i, ['muzi_base_uno', 'muzi_base_duo']],
+  [/Heltec V3/i, ['Heltec_v3']],
 ];
 
 // INFO_UF2.TXT (Model / Board-ID du bootloader)
@@ -73,15 +76,27 @@ const UF2_IDS = [
 
 const hex4 = (n) => n.toString(16).padStart(4, '0');
 
-// Fabricants USB des cartes nRF52 du catalogue (Adafruit / Seeed / Nordic) : filtre du sélecteur de port
-export const NRF52_PORT_FILTERS = [0x239a, 0x2886, 0x1915].map((usbVendorId) => ({ usbVendorId }));
+// Fabricants USB des cartes nRF52 du catalogue (Adafruit / Seeed / Nordic)
+const NRF52_VENDORS = [0x239a, 0x2886, 0x1915];
 
-// Adaptateurs USB-série : jamais une carte nRF52 (ESP32, Arduino, câble FTDI…)
+// Adaptateurs USB-série : jamais une carte nRF52, c'est par eux que se branchent les ESP32
 const USB_BRIDGES = {
   '1a86:7523': 'CH340', '1a86:55d4': 'CH9102', '1a86:7522': 'CH340',
   '10c4:ea60': 'CP210x', '0403:6001': 'FTDI', '0403:6015': 'FTDI',
   '303a:1001': 'ESP32-S3 (USB natif)', '303a:4001': 'ESP32-S3 (USB natif)',
 };
+
+// Filtres du sélecteur de port selon la puce de la carte ('nrf52', 'esp32' ou 'any')
+const PORT_FILTERS = {
+  nrf52: NRF52_VENDORS.map((usbVendorId) => ({ usbVendorId })),
+  esp32: Object.keys(USB_BRIDGES).map((id) => {
+    const [v, p] = id.split(':').map((h) => parseInt(h, 16));
+    return { usbVendorId: v, usbProductId: p };
+  }),
+};
+export const portFilters = (chip) => PORT_FILTERS[chip] || [...PORT_FILTERS.nrf52, ...PORT_FILTERS.esp32];
+
+export const isNrf52Usb = (info) => NRF52_VENDORS.includes(info?.usbVendorId);
 
 export function usbBridge(info) {
   if (!info?.usbVendorId) return null;
