@@ -73,6 +73,21 @@ const UF2_IDS = [
 
 const hex4 = (n) => n.toString(16).padStart(4, '0');
 
+// Fabricants USB des cartes nRF52 du catalogue (Adafruit / Seeed / Nordic) : filtre du sélecteur de port
+export const NRF52_PORT_FILTERS = [0x239a, 0x2886, 0x1915].map((usbVendorId) => ({ usbVendorId }));
+
+// Adaptateurs USB-série : jamais une carte nRF52 (ESP32, Arduino, câble FTDI…)
+const USB_BRIDGES = {
+  '1a86:7523': 'CH340', '1a86:55d4': 'CH9102', '1a86:7522': 'CH340',
+  '10c4:ea60': 'CP210x', '0403:6001': 'FTDI', '0403:6015': 'FTDI',
+  '303a:1001': 'ESP32-S3 (USB natif)', '303a:4001': 'ESP32-S3 (USB natif)',
+};
+
+export function usbBridge(info) {
+  if (!info?.usbVendorId) return null;
+  return USB_BRIDGES[`${hex4(info.usbVendorId)}:${hex4(info.usbProductId)}`] || null;
+}
+
 export function usbCandidates(info) {
   if (!info?.usbVendorId) return { id: null, boards: [] };
   const id = `${hex4(info.usbVendorId)}:${hex4(info.usbProductId)}`;

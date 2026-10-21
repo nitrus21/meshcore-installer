@@ -6,8 +6,8 @@
   <title>Installateur MeshCore</title>
   <meta name="description" content="Installez MeshCore (Companion ou Répéteur) sur une carte nRF52 directement depuis le navigateur.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='4' fill='%2322c55e'/><circle cx='6' cy='8' r='3' fill='%2322c55e'/><circle cx='26' cy='8' r='3' fill='%2322c55e'/><circle cx='16' cy='28' r='3' fill='%2322c55e'/><path d='M6 8L16 16L26 8M16 16V28' stroke='%2322c55e' stroke-width='2' fill='none'/></svg>">
-  <link rel="stylesheet" href="style.css">
-  <script type="module" src="app.js"></script>
+  <link rel="stylesheet" href="style.css?v=dev">
+  <script type="module" src="app.js?v=dev"></script>
 </head>
 <body>
   <header class="top">
@@ -33,6 +33,7 @@
       </div>
       <p class="hint">« Détecter » interroge la carte par USB. Si elle n’est pas reconnue, appuyez deux fois sur RESET :
         un lecteur USB apparaît, cliquez sur « Lire INFO_UF2.TXT » et choisissez ce fichier sur le lecteur.</p>
+      <label class="check"><input type="checkbox" id="all-ports"> Afficher tous les ports série (si votre carte n’apparaît pas dans la liste)</label>
       <div id="detect-result" class="detect" hidden></div>
       <p class="hint">Ou choisissez-la dans la liste :</p>
       <div class="row">

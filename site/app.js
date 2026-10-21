@@ -1,5 +1,5 @@
-import { NordicDfu, touch1200 } from './dfu.js';
-import { usbCandidates, probeSerial, meshtasticCandidates, meshcoreCandidates, uf2Candidates, parseUf2Info } from './detect.js';
+import { NordicDfu, touch1200 } from './dfu.js?v=dev';
+import { usbCandidates, probeSerial, meshtasticCandidates, meshcoreCandidates, uf2Candidates, parseUf2Info, usbBridge, NRF52_PORT_FILTERS } from './detect.js?v=dev';
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -90,6 +90,19 @@ function update() {
   }
 }
 
+// ---------- Port série ----------
+
+// Par défaut on ne propose que les ports des cartes nRF52 (évite de choisir un ESP32 / CH340 par erreur)
+function pickPort() {
+  const filters = $('all-ports').checked ? [] : NRF52_PORT_FILTERS;
+  return navigator.serial.requestPort({ filters });
+}
+
+function bridgeMessage(name) {
+  return `Ce port est un adaptateur USB-série ${name} : c’est un autre appareil (ESP32, Arduino…), pas une carte nRF52. ` +
+    'Choisissez l’autre port, souvent nommé « USB Serial Device » ou du nom de la carte.';
+}
+
 // ---------- Journal / progression ----------
 
 function log(msg) {
@@ -134,7 +147,7 @@ function waitBootloaderPort(timeoutMs = 8000) {
       log('Cliquez sur « Sélectionner le port du bootloader » et choisissez le nouveau port de la carte.');
       btn.hidden = false;
       btn.onclick = async () => {
-        try { finish(await navigator.serial.requestPort()); }
+        try { finish(await pickPort()); }
         catch { log('Aucun port choisi. Réessayez, ou double-appuyez sur RESET puis relancez avec la case « déjà en mode bootloader ».'); }
       };
     }, timeoutMs);
@@ -153,9 +166,11 @@ async function install() {
 
   try {
     log(`Carte : ${board().name} — ${r === 'companion' ? 'Companion Bluetooth' : 'Répéteur'} ${fw.version}`);
-    const filesP = Promise.all([fetchBytes(fw.bin), fetchBytes(fw.dat)]);
-    let port = detectedPort || await navigator.serial.requestPort();
+    const filesP = Promise.all([fetchBytes(`${fw.bin}?v=${fw.version}`), fetchBytes(`${fw.dat}?v=${fw.version}`)]);
+    let port = detectedPort || await pickPort();
     detectedPort = null;
+    const bridge = usbBridge(port.getInfo());
+    if (bridge) throw new Error(bridgeMessage(bridge));
     const [bin, dat] = await filesP;
 
     if (!$('in-bootloader').checked) {
@@ -181,7 +196,7 @@ async function install() {
     if (e?.name === 'NotFoundError') log('Aucun port sélectionné.');
     else {
       log(`❌ Erreur : ${e.message || e}`);
-      log('Astuce : double-appuyez sur RESET, cochez « déjà en mode bootloader » et recommencez.');
+      if (!/adaptateur USB-série/.test(e.message)) log('Astuce : double-appuyez sur RESET, cochez « déjà en mode bootloader » et recommencez.');
     }
   } finally {
     busy = false;
@@ -252,7 +267,12 @@ function showDetection(sources, notes = []) {
 async function detect() {
   if (busy) return;
   let port;
-  try { port = await navigator.serial.requestPort(); } catch { return; }
+  try { port = await pickPort(); } catch { return; }
+  const bridge = usbBridge(port.getInfo());
+  if (bridge) {
+    showDetectError('Ce n’est pas une carte nRF52.', bridgeMessage(bridge));
+    return;
+  }
   busy = true;
   $('detect').disabled = true;
   $('detect').textContent = '⏳ Détection…';
@@ -329,7 +349,7 @@ function conPrint(text) {
 
 async function conConnect() {
   try {
-    const port = await navigator.serial.requestPort();
+    const port = await pickPort();
     await port.open({ baudRate: 115200 });
     con.port = port;
     con.writer = port.writable.getWriter();
