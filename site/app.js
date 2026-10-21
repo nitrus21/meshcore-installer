@@ -1,5 +1,5 @@
 import { NordicDfu, touch1200 } from './dfu.js';
-import { usbCandidates, probeSerial, meshtasticCandidates, meshcoreCandidates, uf2Candidates, readUf2Info } from './detect.js';
+import { usbCandidates, probeSerial, meshtasticCandidates, meshcoreCandidates, uf2Candidates, parseUf2Info } from './detect.js';
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -218,10 +218,10 @@ function showDetection(sources, notes = []) {
     title.innerHTML = `✅ <b>Carte détectée :</b> ${boardName(ids[0])}`;
     el.className = 'detect ok';
   } else if (ids.length) {
-    title.innerHTML = '🤔 <b>Plusieurs cartes possibles.</b> Choisissez la vôtre, ou mettez la carte en mode bootloader (double RESET) puis « Lire le lecteur du bootloader ».';
+    title.innerHTML = '🤔 <b>Plusieurs cartes possibles.</b> Choisissez la vôtre, ou mettez la carte en mode bootloader (double RESET) puis « Lire INFO_UF2.TXT ».';
     el.className = 'detect warn';
   } else {
-    title.innerHTML = '❓ <b>Carte non reconnue.</b> Choisissez-la dans la liste, ou essayez « Lire le lecteur du bootloader ».';
+    title.innerHTML = '❓ <b>Carte non reconnue.</b> Choisissez-la dans la liste, ou essayez « Lire INFO_UF2.TXT ».';
     el.className = 'detect warn';
   }
   el.append(title);
@@ -289,22 +289,32 @@ async function detect() {
   }
 }
 
-async function detectUf2() {
-  if (!('showDirectoryPicker' in window)) {
-    showDetection([], ['Votre navigateur ne permet pas de lire un dossier (utilisez Chrome ou Edge). Ouvrez INFO_UF2.TXT sur le lecteur pour voir le modèle.']);
+function showDetectError(title, detail) {
+  const el = $('detect-result');
+  el.hidden = false;
+  el.className = 'detect warn';
+  el.innerHTML = '';
+  const t = document.createElement('div');
+  t.innerHTML = `⚠ <b>${title}</b>`;
+  const p = document.createElement('div');
+  p.className = 'src';
+  p.textContent = detail;
+  el.append(t, p);
+}
+
+// Sélecteur de fichier classique : fonctionne dans tous les navigateurs (Brave, Firefox, Safari…)
+async function detectUf2(e) {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file) return;
+  const info = parseUf2Info(await file.text());
+  if (!info) {
+    showDetectError('Ce n’est pas le bon fichier.',
+      `« ${file.name} » ne contient pas de modèle de carte. Choisissez INFO_UF2.TXT à la racine du lecteur USB de la carte (ex. PROMICRO, NICENANO, RAK4631…).`);
     return;
   }
-  try {
-    const info = await readUf2Info();
-    const model = info.match(/Model:\s*(.+)/i)?.[1]?.trim();
-    const id = info.match(/Board-ID:\s*(.+)/i)?.[1]?.trim();
-    showDetection([{ label: `Bootloader : ${model || '?'} (${id || '?'})`, ids: uf2Candidates(info), strong: true }]);
-  } catch (e) {
-    if (e?.name === 'AbortError') return;
-    showDetection([], [e?.name === 'NotFoundError'
-      ? 'INFO_UF2.TXT introuvable : choisissez bien le lecteur USB de la carte (ex. PROMICRO, NICENANO, RAK4631…).'
-      : `Lecture impossible : ${e.message || e}`]);
-  }
+  const text = `${info.model || ''} ${info.boardId || ''}`;
+  showDetection([{ label: `Bootloader : ${info.model || '?'} (${info.boardId || '?'})`, ids: uf2Candidates(text), strong: true }]);
 }
 
 // ---------- Console répéteur ----------
@@ -387,7 +397,8 @@ if (!hasSerial) {
   $('detect').disabled = true;
 }
 $('detect').addEventListener('click', detect);
-$('detect-uf2').addEventListener('click', detectUf2);
+$('detect-uf2').addEventListener('click', () => $('uf2-file').click());
+$('uf2-file').addEventListener('change', detectUf2);
 $('board').addEventListener('change', update);
 $('board-search').addEventListener('input', (e) => { renderBoards(e.target.value); update(); });
 document.querySelectorAll('input[name=role]').forEach((el) => el.addEventListener('change', update));

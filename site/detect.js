@@ -214,9 +214,9 @@ export function uf2Candidates(infoText) {
   return [];
 }
 
-// Lecture de INFO_UF2.TXT sur le lecteur USB du bootloader (File System Access API)
-export async function readUf2Info() {
-  const dir = await window.showDirectoryPicker({ mode: 'read' });
-  const fh = await dir.getFileHandle('INFO_UF2.TXT');
-  return (await fh.getFile()).text();
+// Contenu de INFO_UF2.TXT (lecteur USB du bootloader) → { model, boardId } ou null
+export function parseUf2Info(text) {
+  const model = text.match(/Model:\s*(.+)/i)?.[1]?.trim();
+  const boardId = text.match(/Board-ID:\s*(.+)/i)?.[1]?.trim();
+  return model || boardId ? { model, boardId } : null;
 }

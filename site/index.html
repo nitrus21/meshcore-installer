@@ -28,8 +28,11 @@
       <h2><span class="step">1</span> Votre carte</h2>
       <div class="actions detect-actions">
         <button id="detect" class="primary">🔍 Détecter ma carte</button>
-        <button id="detect-uf2" title="Si la carte est en mode bootloader (lecteur USB visible)">📂 Lire le lecteur du bootloader</button>
+        <button id="detect-uf2">📄 Lire INFO_UF2.TXT</button>
+        <input type="file" id="uf2-file" accept=".txt,.TXT,text/plain" hidden>
       </div>
+      <p class="hint">« Détecter » interroge la carte par USB. Si elle n’est pas reconnue, appuyez deux fois sur RESET :
+        un lecteur USB apparaît, cliquez sur « Lire INFO_UF2.TXT » et choisissez ce fichier sur le lecteur.</p>
       <div id="detect-result" class="detect" hidden></div>
       <p class="hint">Ou choisissez-la dans la liste :</p>
       <div class="row">
